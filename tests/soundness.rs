@@ -129,6 +129,7 @@ fn try_from_owned_copy_roundtrips() {
 // `Clone`/`Copy` on `Array` require `S::ArrayType<T>: Clone`/`Copy`; since
 // `Concat` is `Clone`, `Sum` sizes are cloneable too.
 #[test]
+#[allow(clippy::clone_on_copy)]
 fn clone_is_a_deep_independent_copy() {
     let a: Array<i32, Sum<U<2>, U<2>>> = Array::from_fn(|i| i as i32);
     let mut b = a.clone();

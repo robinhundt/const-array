@@ -1,29 +1,35 @@
 #![doc = include_str!("../README.md")]
 #![no_std]
+#![warn(clippy::undocumented_unsafe_blocks)]
 
 use core::{
     array,
     marker::PhantomData,
+    mem,
     ops::{Deref, DerefMut},
     ptr, slice,
 };
 
 /// Trait for arrays of type `T`.
 ///
-/// This abstracts over plain arrays `[T; LEN` and concatenations
+/// This abstracts over plain arrays `[T; LEN]` and concatenations
 /// of arrays [`Concat`].
+///
+/// # Safety
+/// It must be sound to transmute `&Self` into `&[T; Self::LEN]` and
+/// `&mut Self` into `&mut [T; Self::LEN]` and vice versa.
 pub unsafe trait ArrayType<T>: sealed::Sealed + Sized {
-    /// The length of the array. It is guaranteed that for
-    /// any `T, A: ArrayType<T>`, it holds that `mem::size_of::<A>() == A::LEN`.
+    /// The length of the array.
     const LEN: usize;
 
     /// Build a new array from the provided closure.
     ///
-    /// The closure is called with the index of the element plus the provided
-    /// offset.
+    /// The element at index `i` of the returned array is `f(offset + i)`.
     fn build<F: FnMut(usize) -> T>(f: F, offset: usize) -> Self;
 }
 
+// SAFETY: Self is `[T; N]` and `Self::LEN = N` so it is trivially sound to
+// transmute references of it to itself.
 unsafe impl<T, const N: usize> ArrayType<T> for [T; N] {
     const LEN: usize = N;
 
@@ -37,6 +43,12 @@ unsafe impl<T, const N: usize> ArrayType<T> for [T; N] {
 #[derive(Clone, Copy)]
 pub struct Concat<A, B>(pub A, pub B);
 
+// SAFETY: By `A` and `B`'s invariants, both have alignment `align_of::<T>()`
+// and a size that is an exact multiple of `size_of::<T>()`. So `repr(C)`
+// places `B` at offset `size_of::<A>()` with no gap and adds no tail padding,
+// giving `Concat` the size and alignment of `[T; A::LEN + B::LEN]` with every
+// slot holding an initialized `T`. That sum is `Self::LEN`, so the transmute is
+// sound in both directions.
 unsafe impl<T, A: ArrayType<T>, B: ArrayType<T>> ArrayType<T> for Concat<A, B> {
     const LEN: usize = A::LEN + B::LEN;
 
@@ -48,6 +60,10 @@ unsafe impl<T, A: ArrayType<T>, B: ArrayType<T>> ArrayType<T> for Concat<A, B> {
 /// Trait for valid [`Array`] sizes.
 ///
 /// This is either a plain size [`U`] or a sum of sizes [`Sum`].
+///
+/// # Safety
+/// For any type `T, S: ArraySize` it must hold that
+/// `<S::ArrayType<T> as ArrayType<T>>::LEN == S::USIZE`.
 pub unsafe trait ArraySize: sealed::Sealed {
     /// The value of the array size.
     const USIZE: usize;
@@ -55,7 +71,7 @@ pub unsafe trait ArraySize: sealed::Sealed {
     /// The array type for this size.
     ///
     /// It is guaranteed that for any `S: ArraySize` it holds that
-    /// `<S::ArrayType<T> as ArrayType>::LEN == S::USIZE`.
+    /// `<S::ArrayType<T> as ArrayType<T>>::LEN == S::USIZE`.
     type ArrayType<T>: ArrayType<T>;
 }
 
@@ -64,12 +80,17 @@ pub struct U<const N: usize>;
 /// The sum of two [`ArraySizes`][`ArraySize`].
 pub struct Sum<A, B>(PhantomData<(A, B)>);
 
+// SAFETY: The LEN of the ArrayType and the USIZE are both `N`.
 unsafe impl<const N: usize> ArraySize for U<N> {
     const USIZE: usize = N;
 
     type ArrayType<T> = [T; N];
 }
 
+// SAFETY: The invariant holds for A and B. By setting `Self::USIZE` as the sum
+// of the individual `USIZE` and using `Concat` which implements
+// `const LEN: usize = A::LEN + B::LEN;` we know the invariant holds for the Sum
+// impl.
 unsafe impl<A: ArraySize, B: ArraySize> ArraySize for Sum<A, B> {
     const USIZE: usize = A::USIZE + B::USIZE;
 
@@ -77,6 +98,7 @@ unsafe impl<A: ArraySize, B: ArraySize> ArraySize for Sum<A, B> {
 }
 
 /// A generic array for a type `T` and an [`ArraySize`] `S`.
+#[repr(transparent)]
 pub struct Array<T, S: ArraySize>(S::ArrayType<T>);
 
 impl<T: Clone, S: ArraySize<ArrayType<T>: Clone>> Clone for Array<T, S> {
@@ -87,13 +109,41 @@ impl<T: Clone, S: ArraySize<ArrayType<T>: Clone>> Clone for Array<T, S> {
 impl<T: Copy, S: ArraySize<ArrayType<T>: Copy>> Copy for Array<T, S> {}
 
 impl<T, S: ArraySize> Array<T, S> {
+    // These asserts should never fail for valid implementations of ArrayType and
+    // ArraySize. Since these traits are also sealed, these checks are only an
+    // additional check for errors in this library and can be used for easier
+    // reasoning of unsafe blocks.
+    const LAYOUT_OK: () = {
+        assert!(<S::ArrayType<T> as ArrayType<T>>::LEN == S::USIZE);
+        assert!(mem::align_of::<Self>() == mem::align_of::<T>());
+        assert!(mem::size_of::<Self>() == mem::size_of::<T>() * S::USIZE);
+    };
+
     /// View the [`Array`] as a slice.
     pub fn as_slice(&self) -> &[T] {
+        const { Self::LAYOUT_OK };
+        // SAFETY:
+        // - `LAYOUT_OK` has checked that `Array<T, S>` has the size and alignment of
+        //   `[T; S::USIZE]`, and `Array` is `repr(transparent)` over `S::ArrayType<T>`,
+        //   so the elements start at offset 0.
+        // - By the `ArrayType` invariant each of those `S::USIZE` slots holds an
+        //   initialized, valid `T`.
+        // - The slice borrows from `&self` for `'_`, so it cannot outlive the array or
+        //   alias a `&mut` to it.
         unsafe { slice::from_raw_parts(ptr::from_ref(self).cast(), S::USIZE) }
     }
 
     /// View the [`Array`] as a mutable slice.
     pub fn as_mut_slice(&mut self) -> &mut [T] {
+        const { Self::LAYOUT_OK };
+        // SAFETY:
+        // - `LAYOUT_OK` has checked that `Array<T, S>` has the size and alignment of
+        //   `[T; S::USIZE]`, and `Array` is `repr(transparent)` over `S::ArrayType<T>`,
+        //   so the elements start at offset 0.
+        // - By the `ArrayType` invariant each of those `S::USIZE` slots holds an
+        //   initialized, valid `T`.
+        // - The slice derives from `&mut self`, so it is the only live access to the
+        //   storage for `'_`.
         unsafe { slice::from_raw_parts_mut(ptr::from_mut(self).cast(), S::USIZE) }
     }
 
@@ -159,8 +209,16 @@ impl<T, S: ArraySize> TryFrom<&[T]> for &Array<T, S> {
     type Error = TryFromSliceError;
 
     fn try_from(slice: &[T]) -> Result<Self, Self::Error> {
+        const { <Array<T, S>>::LAYOUT_OK };
         if slice.len() == S::USIZE {
             let ptr: *const Array<T, S> = slice.as_ptr().cast();
+            // SAFETY:
+            // - `slice.len() == S::USIZE`, and `LAYOUT_OK` gives `Array<T, S>` the size and
+            //   alignment of `[T; S::USIZE]`, so `slice.as_ptr()` is non-null and correctly
+            //   aligned for `Array<T, S>` over a region of exactly the right size.
+            // - Per the `ArrayType` invariant (reverse direction) those bytes are a valid
+            //   `S::ArrayType<T>`, which `Array` is `repr(transparent)` over.
+            // - The result borrows from `slice`, so it can neither dangle nor alias.
             unsafe { Ok(&*ptr) }
         } else {
             Err(TryFromSliceError(()))
@@ -172,8 +230,18 @@ impl<T, S: ArraySize> TryFrom<&mut [T]> for &mut Array<T, S> {
     type Error = TryFromSliceError;
 
     fn try_from(slice: &mut [T]) -> Result<Self, Self::Error> {
+        const { <Array<T, S>>::LAYOUT_OK };
         if slice.len() == S::USIZE {
             let ptr: *mut Array<T, S> = slice.as_mut_ptr().cast();
+            // SAFETY:
+            // - `slice.len() == S::USIZE`, and `LAYOUT_OK` gives `Array<T, S>` the size and
+            //   alignment of `[T; S::USIZE]`, so `slice.as_mut_ptr()` is non-null and
+            //   correctly aligned for `Array<T, S>` over a region of exactly the right
+            //   size.
+            // - Per the `ArrayType` invariant (reverse direction) those bytes are a valid
+            //   `S::ArrayType<T>`, which `Array` is `repr(transparent)` over.
+            // - The result inherits uniqueness from the `&mut [T]` it borrows from, so it
+            //   is the only live access to the storage for its lifetime.
             unsafe { Ok(&mut *ptr) }
         } else {
             Err(TryFromSliceError(()))

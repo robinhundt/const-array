@@ -1,0 +1,104 @@
+name: Pull Request
+
+permissions: {}
+
+on:
+  pull_request:
+  merge_group:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test
+    runs-on: "${{ matrix.os }}"
+    strategy:
+      matrix:
+        os: [ "ubuntu-latest", "windows-latest", "macos-latest" ]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: stable
+
+      - run: cargo --version
+
+      - name: Run tests
+        run: cargo test --verbose --no-fail-fast ${{ runner.os == 'macOS' && '-- --test-threads=1' || '' }}
+
+  miri:
+    name: Miri
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: nightly
+          components: "miri"
+
+      - run: cargo --version
+
+      - name: Run miri test
+        run: cargo miri test
+
+  lint:
+    name: Lint
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: nightly
+          components: "rustfmt"
+
+      - run: cargo --version
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: "stable"
+          components: "clippy"
+
+      - name: Check Clippy
+        run: cargo clippy --all-features --all-targets -- -D warnings
+
+  docs:
+    name: Docs
+    runs-on: "ubuntu-latest"
+    env:
+      # deny rustdoc warnings
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: stable
+
+      - run: cargo --version
+
+      - name: Check docs
+        run: cargo doc --verbose --all-features --no-deps

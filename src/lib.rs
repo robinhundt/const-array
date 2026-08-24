@@ -1,0 +1,201 @@
+#![doc = include_str!("../README.md")]
+#![no_std]
+
+use core::{
+    array,
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+    ptr, slice,
+};
+
+/// Trait for arrays of type `T`.
+///
+/// This abstracts over plain arrays `[T; LEN` and concatenations
+/// of arrays [`Concat`].
+pub unsafe trait ArrayType<T>: sealed::Sealed + Sized {
+    /// The length of the array. It is guaranteed that for
+    /// any `T, A: ArrayType<T>`, it holds that `mem::size_of::<A>() == A::LEN`.
+    const LEN: usize;
+
+    /// Build a new array from the provided closure.
+    ///
+    /// The closure is called with the index of the element plus the provided
+    /// offset.
+    fn build<F: FnMut(usize) -> T>(f: F, offset: usize) -> Self;
+}
+
+unsafe impl<T, const N: usize> ArrayType<T> for [T; N] {
+    const LEN: usize = N;
+
+    fn build<F: FnMut(usize) -> T>(mut f: F, offset: usize) -> Self {
+        array::from_fn(|i| f(offset + i))
+    }
+}
+
+/// Concatenation of two [`Arrays`][`Array`].
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct Concat<A, B>(pub A, pub B);
+
+unsafe impl<T, A: ArrayType<T>, B: ArrayType<T>> ArrayType<T> for Concat<A, B> {
+    const LEN: usize = A::LEN + B::LEN;
+
+    fn build<F: FnMut(usize) -> T>(mut f: F, offset: usize) -> Self {
+        Concat(A::build(&mut f, offset), B::build(&mut f, offset + A::LEN))
+    }
+}
+
+/// Trait for valid [`Array`] sizes.
+///
+/// This is either a plain size [`U`] or a sum of sizes [`Sum`].
+pub unsafe trait ArraySize: sealed::Sealed {
+    /// The value of the array size.
+    const USIZE: usize;
+
+    /// The array type for this size.
+    ///
+    /// It is guaranteed that for any `S: ArraySize` it holds that
+    /// `<S::ArrayType<T> as ArrayType>::LEN == S::USIZE`.
+    type ArrayType<T>: ArrayType<T>;
+}
+
+/// A simple [`ArraySize`] over a const generic `N`.
+pub struct U<const N: usize>;
+/// The sum of two [`ArraySizes`][`ArraySize`].
+pub struct Sum<A, B>(PhantomData<(A, B)>);
+
+unsafe impl<const N: usize> ArraySize for U<N> {
+    const USIZE: usize = N;
+
+    type ArrayType<T> = [T; N];
+}
+
+unsafe impl<A: ArraySize, B: ArraySize> ArraySize for Sum<A, B> {
+    const USIZE: usize = A::USIZE + B::USIZE;
+
+    type ArrayType<T> = Concat<A::ArrayType<T>, B::ArrayType<T>>;
+}
+
+/// A generic array for a type `T` and an [`ArraySize`] `S`.
+pub struct Array<T, S: ArraySize>(S::ArrayType<T>);
+
+impl<T: Clone, S: ArraySize<ArrayType<T>: Clone>> Clone for Array<T, S> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+impl<T: Copy, S: ArraySize<ArrayType<T>: Copy>> Copy for Array<T, S> {}
+
+impl<T, S: ArraySize> Array<T, S> {
+    /// View the [`Array`] as a slice.
+    pub fn as_slice(&self) -> &[T] {
+        unsafe { slice::from_raw_parts(ptr::from_ref(self).cast(), S::USIZE) }
+    }
+
+    /// View the [`Array`] as a mutable slice.
+    pub fn as_mut_slice(&mut self) -> &mut [T] {
+        unsafe { slice::from_raw_parts_mut(ptr::from_mut(self).cast(), S::USIZE) }
+    }
+
+    /// Construct a new array from a function.
+    ///
+    /// The function is called with each index of the array in order.
+    pub fn from_fn<F: FnMut(usize) -> T>(f: F) -> Array<T, S> {
+        Array(S::ArrayType::build(f, 0))
+    }
+}
+
+impl<T, A: ArraySize, B: ArraySize> Array<T, Sum<A, B>> {
+    /// Split a concatenated [`Array`] into its parts.
+    pub fn parts(self) -> (Array<T, A>, Array<T, B>) {
+        let Concat(a, b) = self.0;
+        (Array(a), Array(b))
+    }
+}
+
+impl<T, S: ArraySize> Deref for Array<T, S> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
+
+impl<T, S: ArraySize> DerefMut for Array<T, S> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.as_mut_slice()
+    }
+}
+
+impl<T, S: ArraySize> AsRef<[T]> for Array<T, S> {
+    fn as_ref(&self) -> &[T] {
+        self.as_slice()
+    }
+}
+
+impl<T, S: ArraySize> AsMut<[T]> for Array<T, S> {
+    fn as_mut(&mut self) -> &mut [T] {
+        self.as_mut_slice()
+    }
+}
+
+impl<T: Default, S: ArraySize> Default for Array<T, S> {
+    fn default() -> Self {
+        Self::from_fn(|_| T::default())
+    }
+}
+
+impl<T, const N: usize> From<[T; N]> for Array<T, U<N>> {
+    fn from(arr: [T; N]) -> Self {
+        Array(arr)
+    }
+}
+
+/// Error when converting a slice into an [`Array`].
+#[derive(Debug, Copy, Clone)]
+pub struct TryFromSliceError(());
+
+impl<T, S: ArraySize> TryFrom<&[T]> for &Array<T, S> {
+    type Error = TryFromSliceError;
+
+    fn try_from(slice: &[T]) -> Result<Self, Self::Error> {
+        if slice.len() == S::USIZE {
+            let ptr: *const Array<T, S> = slice.as_ptr().cast();
+            unsafe { Ok(&*ptr) }
+        } else {
+            Err(TryFromSliceError(()))
+        }
+    }
+}
+
+impl<T, S: ArraySize> TryFrom<&mut [T]> for &mut Array<T, S> {
+    type Error = TryFromSliceError;
+
+    fn try_from(slice: &mut [T]) -> Result<Self, Self::Error> {
+        if slice.len() == S::USIZE {
+            let ptr: *mut Array<T, S> = slice.as_mut_ptr().cast();
+            unsafe { Ok(&mut *ptr) }
+        } else {
+            Err(TryFromSliceError(()))
+        }
+    }
+}
+
+impl<T: Copy, S: ArraySize<ArrayType<T>: Copy>> TryFrom<&[T]> for Array<T, S> {
+    type Error = TryFromSliceError;
+
+    fn try_from(slice: &[T]) -> Result<Self, Self::Error> {
+        <&Self>::try_from(slice).copied()
+    }
+}
+
+mod sealed {
+    use crate::{Concat, Sum, U};
+
+    pub trait Sealed {}
+
+    impl<T, const N: usize> Sealed for [T; N] {}
+    impl<A, B> Sealed for Concat<A, B> {}
+    impl<const N: usize> Sealed for U<N> {}
+    impl<A, B> Sealed for Sum<A, B> {}
+}

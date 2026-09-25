@@ -421,3 +421,11 @@ fn proof_macros_in_generic_code_and_impls() {
     assert_eq!((lo[0], hi[0]), (0, 8));
     let _ = Cipher::HALVES;
 }
+
+#[test]
+fn len_constant_needs_no_value() {
+    const N: usize = Array::<u8, S7>::LEN;
+    assert_eq!(N, 7);
+    assert_eq!(Array::<(), Prod<Len<3>, S6>>::LEN, 18);
+    assert_eq!(Array::<String, Len<0>>::LEN, 0);
+}

@@ -68,6 +68,19 @@ impl<T, S: ArrayLen> Array<T, S> {
         assert!(mem::size_of::<Self>() == mem::size_of::<T>() * S::USIZE);
     };
 
+    /// The number of elements. Unlike [`len`](slice::len), it needs no value:
+    ///
+    /// ```
+    /// use const_array::{Array, ArrayLen, Len, Prod};
+    ///
+    /// fn buffer_len<B: ArrayLen>() -> usize {
+    ///     Array::<u8, Prod<Len<4>, B>>::LEN
+    /// }
+    ///
+    /// assert_eq!(buffer_len::<Len<16>>(), 64);
+    /// ```
+    pub const LEN: usize = S::USIZE;
+
     /// View the [`Array`] as a slice.
     pub const fn as_slice(&self) -> &[T] {
         const { Self::LAYOUT_OK };

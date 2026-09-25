@@ -68,6 +68,19 @@ impl<T, S: ArrayLen> Array<T, S> {
         assert!(mem::size_of::<Self>() == mem::size_of::<T>() * S::USIZE);
     };
 
+    /// The number of elements. Unlike [`len`](slice::len), it needs no value:
+    ///
+    /// ```
+    /// use const_array::{Array, ArrayLen, Len, Prod};
+    ///
+    /// fn buffer_len<B: ArrayLen>() -> usize {
+    ///     Array::<u8, Prod<Len<4>, B>>::LEN
+    /// }
+    ///
+    /// assert_eq!(buffer_len::<Len<16>>(), 64);
+    /// ```
+    pub const LEN: usize = S::USIZE;
+
     /// View the [`Array`] as a slice.
     pub const fn as_slice(&self) -> &[T] {
         const { Self::LAYOUT_OK };
@@ -82,6 +95,58 @@ impl<T, S: ArrayLen> Array<T, S> {
         // SAFETY: `Array<T, S>` is laid out as `[T; S::USIZE]`. The slice
         // mutably borrows from `self`.
         unsafe { slice::from_raw_parts_mut(ptr::from_mut(self).cast(), S::USIZE) }
+    }
+
+    /// Split a slice into [`Array`]s and the remaining elements. Like
+    /// [`<[T]>::as_chunks`](slice::as_chunks), it fails to compile for a size
+    /// of length 0.
+    ///
+    /// ```
+    /// use const_array::{Array, Len};
+    ///
+    /// // E.g. the full blocks of a message, and the bytes left to buffer.
+    /// let data = [0u8; 100];
+    /// let (blocks, rest) = Array::<u8, Len<16>>::slice_as_chunks(&data);
+    /// assert_eq!((blocks.len(), rest.len()), (6, 4));
+    /// ```
+    ///
+    /// ```compile_fail
+    /// use const_array::{Array, Len};
+    ///
+    /// let _ = Array::<u8, Len<0>>::slice_as_chunks(&[1, 2, 3]);
+    /// ```
+    pub const fn slice_as_chunks(slice: &[T]) -> (&[Self], &[T]) {
+        const { Self::LAYOUT_OK };
+        const { assert!(S::USIZE != 0, "Array::slice_as_chunks: the chunk size is 0") };
+        let len = slice.len() / S::USIZE;
+        let (chunks, rest) = slice.split_at(len * S::USIZE);
+        // SAFETY: `chunks` holds `len * S::USIZE` elements, and `Self` is laid
+        // out as `[T; S::USIZE]`, so they are `len` values of `Self`. The
+        // result borrows from `slice`.
+        (
+            unsafe { slice::from_raw_parts(chunks.as_ptr().cast(), len) },
+            rest,
+        )
+    }
+
+    /// Mutable version of [`Array::slice_as_chunks`].
+    pub const fn slice_as_chunks_mut(slice: &mut [T]) -> (&mut [Self], &mut [T]) {
+        const { Self::LAYOUT_OK };
+        const {
+            assert!(
+                S::USIZE != 0,
+                "Array::slice_as_chunks_mut: the chunk size is 0"
+            )
+        };
+        let len = slice.len() / S::USIZE;
+        let (chunks, rest) = slice.split_at_mut(len * S::USIZE);
+        // SAFETY: `chunks` holds `len * S::USIZE` elements, and `Self` is laid
+        // out as `[T; S::USIZE]`, so they are `len` values of `Self`. The
+        // result mutably borrows from `slice`.
+        (
+            unsafe { slice::from_raw_parts_mut(chunks.as_mut_ptr().cast(), len) },
+            rest,
+        )
     }
 
     /// Construct a new array from a function.
@@ -251,6 +316,53 @@ impl<T, S: ArrayLen> Array<T, S> {
         // out as `[T; P::USIZE]`. The result mutably borrows from
         // `self`.
         (unsafe { &mut *prefix.as_mut_ptr().cast() }, rest)
+    }
+
+    /// View the last `P::USIZE` elements as an [`Array`].
+    ///
+    /// ```
+    /// use const_array::{at_most, Array, Len};
+    ///
+    /// // E.g. the 8 byte length field at the end of a padded hash block.
+    /// let block: Array<u8, Len<64>> = Array::from_fn(|i| i as u8);
+    /// let len_field: &Array<u8, Len<8>> = block.suffix_ref(at_most!(Len<8>, Len<64>));
+    /// assert_eq!(len_field[0], 56);
+    /// ```
+    pub const fn suffix_ref<P: ArrayLen>(&self, proof: AtMost<P, S>) -> &Array<T, P> {
+        self.split_suffix(proof).1
+    }
+
+    /// View the last `P::USIZE` elements as a mutable [`Array`].
+    pub const fn suffix_mut<P: ArrayLen>(&mut self, proof: AtMost<P, S>) -> &mut Array<T, P> {
+        self.split_suffix_mut(proof).1
+    }
+
+    /// Split into a slice of the rest and the last `P::USIZE` elements, as an
+    /// [`Array`]. See [`Array::split_prefix`].
+    pub const fn split_suffix<P: ArrayLen>(&self, _proof: AtMost<P, S>) -> (&[T], &Array<T, P>) {
+        const { Array::<T, P>::LAYOUT_OK };
+        // By `AtMost`'s invariant, `P::USIZE <= S::USIZE`, so this neither
+        // overflows nor panics.
+        let (rest, suffix) = self.as_slice().split_at(S::USIZE - P::USIZE);
+        // SAFETY: `suffix` holds `P::USIZE` elements, and `Array<T, P>` is laid
+        // out as `[T; P::USIZE]`. The result borrows from `self`.
+        (rest, unsafe { &*suffix.as_ptr().cast() })
+    }
+
+    /// Split into a mutable slice of the rest and the last `P::USIZE`
+    /// elements, as a mutable [`Array`].
+    pub const fn split_suffix_mut<P: ArrayLen>(
+        &mut self,
+        _proof: AtMost<P, S>,
+    ) -> (&mut [T], &mut Array<T, P>) {
+        const { Array::<T, P>::LAYOUT_OK };
+        // By `AtMost`'s invariant, `P::USIZE <= S::USIZE`, so this neither
+        // overflows nor panics.
+        let (rest, suffix) = self.as_mut_slice().split_at_mut(S::USIZE - P::USIZE);
+        // SAFETY: `suffix` holds `P::USIZE` elements, and `Array<T, P>` is laid
+        // out as `[T; P::USIZE]`. The result mutably borrows from
+        // `self`.
+        (rest, unsafe { &mut *suffix.as_mut_ptr().cast() })
     }
 
     /// Construct an array that starts with `prefix` and is filled up with

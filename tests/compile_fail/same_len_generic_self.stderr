@@ -1,0 +1,17 @@
+error: generic `Self` types are currently not permitted in anonymous constants
+  --> tests/compile_fail/same_len_generic_self.rs:14:50
+   |
+14 |     const IS_32: SameLen<S, Len<32>> = same_len!(Self::Size, Len<32>);
+   |                                                  ^^^^
+   |
+note: not a concrete type
+  --> tests/compile_fail/same_len_generic_self.rs:12:28
+   |
+12 | impl<S: ArrayLen> Flat for Wrapper<S> {
+   |                            ^^^^^^^^^^
+
+error: generic parameters may not be used in const operations
+  --> tests/compile_fail/same_len_generic_self.rs:14:50
+   |
+14 |     const IS_32: SameLen<S, Len<32>> = same_len!(Self::Size, Len<32>);
+   |                                                  ^^^^^^^^^^

@@ -10,7 +10,7 @@ mod same_len;
 mod size;
 
 pub use array::{Array, TryFromSliceError};
-pub use at_most::AtMost;
+pub use at_most::{AtLeast, AtMost};
 pub use iter::IntoIter;
 pub use same_len::SameLen;
 pub use size::{ArrayLen, ArrayType, Concat, Len, Prod, Repeat, Sum};

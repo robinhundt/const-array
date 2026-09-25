@@ -9,8 +9,9 @@ use crate::{ArrayLen, SameLen};
 /// An `AtMost` is required by [`Array::truncate`](crate::Array::truncate),
 /// [`Array::prefix_ref`](crate::Array::prefix_ref),
 /// [`Array::split_prefix`](crate::Array::split_prefix),
+/// [`Array::suffix_ref`](crate::Array::suffix_ref),
 /// [`Array::pad_from`](crate::Array::pad_from) and friends, which take or
-/// fill the first `A::USIZE` elements of an array of size `B`.
+/// fill the first or last `A::USIZE` elements of an array of size `B`.
 ///
 /// It is obtained in the same ways as a [`SameLen`], in order of preference:
 ///
@@ -27,6 +28,13 @@ use crate::{ArrayLen, SameLen};
 // Invariant: An `AtMost<A, B>` only exists if `A::USIZE <= B::USIZE`. Unsafe
 // code relies on this, so every constructor must ensure it.
 pub struct AtMost<A, B>(PhantomData<(A, B)>);
+
+/// Proof that the [`ArrayLen`] `A` is at least as long as the [`ArrayLen`]
+/// `B`, i.e. an [`AtMost<B, A>`](AtMost).
+///
+/// Create it with [`at_least!`](crate::at_least!) or the constructors of
+/// [`AtMost`]. Compiler errors name it `AtMost<B, A>`.
+pub type AtLeast<A, B> = AtMost<B, A>;
 
 // Manual impls, because deriving them would add unnecessary bounds on `A`
 // and `B`.
@@ -91,6 +99,9 @@ impl<A: ArrayLen, B: ArrayLen> AtMost<A, B> {
     ///
     /// let _ = first_16::<Len<8>>(&Array::default());
     /// ```
+    ///
+    /// The error points at the generic code, not at the code that chose the
+    /// sizes. See [`SameLen::checked`] for how to move it to `cargo check`.
     pub const fn checked() -> Self {
         const {
             assert!(
@@ -128,7 +139,8 @@ impl<A: ArrayLen, B: ArrayLen> SameLen<A, B> {
 
 /// Create an [`AtMost`] proof for two concrete [`ArrayLens`][`ArrayLen`].
 ///
-/// Fails to compile if the first size is longer than the second:
+/// Fails to compile if the first size is longer than the second, already
+/// during `cargo check`:
 ///
 /// ```
 /// use const_array::{at_most, AtMost, Len, Sum};
@@ -142,18 +154,82 @@ impl<A: ArrayLen, B: ArrayLen> SameLen<A, B> {
 /// let proof = at_most!(Len<7>, Len<6>);
 /// ```
 ///
-/// Like [`same_len!`](crate::same_len!), the macro cannot be used with generic
-/// parameters of the surrounding function or with `Self`. Spell out the
-/// concrete type instead.
+/// Like [`same_len!`](crate::same_len!), the macro rejects generic parameters
+/// of the surrounding item during `cargo check`, and accepts `Self` and its
+/// associated types in an impl for a concrete type:
+///
+/// ```
+/// use const_array::{at_most, ArrayLen, AtMost, Len};
+///
+/// trait Digest {
+///     type OutputSize: ArrayLen;
+///     type BlockSize: ArrayLen;
+///     const OUTPUT_FITS_BLOCK: AtMost<Self::OutputSize, Self::BlockSize>;
+/// }
+///
+/// struct Sha256;
+///
+/// impl Digest for Sha256 {
+///     type OutputSize = Len<32>;
+///     type BlockSize = Len<64>;
+///     const OUTPUT_FITS_BLOCK: AtMost<Self::OutputSize, Self::BlockSize> =
+///         at_most!(Self::OutputSize, Self::BlockSize);
+/// }
+/// ```
+///
+/// ```compile_fail
+/// use const_array::{at_most, ArrayLen, AtMost, Len};
+///
+/// fn generic<S: ArrayLen>() -> AtMost<S, Len<64>> {
+///     at_most!(S, Len<64>)
+/// }
+/// ```
 #[macro_export]
 macro_rules! at_most {
-    ($a:ty, $b:ty $(,)?) => {{
-        const PROOF: $crate::AtMost<$a, $b> = match $crate::AtMost::<$a, $b>::try_new() {
-            ::core::option::Option::Some(proof) => proof,
-            ::core::option::Option::None => {
-                ::core::panic!("at_most!: the first size is longer than the second")
+    ($a:ty, $b:ty $(,)?) => {
+        // See `same_len!`. The array length underflows if the first size is
+        // longer, which names both lengths in the error.
+        const {
+            let _ = [(); <$b as $crate::ArrayLen>::USIZE - <$a as $crate::ArrayLen>::USIZE];
+            match $crate::AtMost::<$a, $b>::try_new() {
+                ::core::option::Option::Some(proof) => proof,
+                ::core::option::Option::None => {
+                    ::core::panic!("at_most!: the first size is longer than the second")
+                }
             }
-        };
-        PROOF
-    }};
+        }
+    };
+}
+
+/// Create an [`AtLeast`] proof for two concrete [`ArrayLens`][`ArrayLen`].
+///
+/// `at_least!(A, B)` is [`at_most!(B, A)`](crate::at_most!), and fails during
+/// `cargo check` if `A` is shorter than `B`:
+///
+/// ```
+/// use const_array::{at_least, AtLeast, Len};
+///
+/// let proof: AtLeast<Len<12>, Len<1>> = at_least!(Len<12>, Len<1>);
+/// ```
+///
+/// ```compile_fail
+/// use const_array::{at_least, Len};
+///
+/// let proof = at_least!(Len<0>, Len<1>);
+/// ```
+#[macro_export]
+macro_rules! at_least {
+    ($a:ty, $b:ty $(,)?) => {
+        // See `same_len!`. The array length underflows if the first size is
+        // shorter, which names both lengths in the error.
+        const {
+            let _ = [(); <$a as $crate::ArrayLen>::USIZE - <$b as $crate::ArrayLen>::USIZE];
+            match $crate::AtLeast::<$a, $b>::try_new() {
+                ::core::option::Option::Some(proof) => proof,
+                ::core::option::Option::None => {
+                    ::core::panic!("at_least!: the first size is shorter than the second")
+                }
+            }
+        }
+    };
 }

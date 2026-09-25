@@ -8,7 +8,9 @@
 
 use std::panic::{RefUnwindSafe, UnwindSafe};
 
-use const_array::{Array, ArrayLen, AtMost, Len, Prod, SameLen, Sum, at_most, same_len};
+use const_array::{
+    Array, ArrayLen, AtLeast, AtMost, Len, Prod, SameLen, Sum, at_least, at_most, same_len,
+};
 
 // Readable size aliases.
 type S3 = Len<3>;
@@ -383,4 +385,58 @@ fn try_from_slice_error_is_an_error() {
     assert_eq!(err.to_string(), "could not convert slice to array");
     let boxed: Box<dyn std::error::Error> = Box::new(err);
     assert_eq!(boxed.to_string(), "could not convert slice to array");
+}
+
+/// The proof macros accept concrete sizes inside generic code, and `Self` in
+/// impls for concrete types, also inside methods.
+#[test]
+fn proof_macros_in_generic_code_and_impls() {
+    fn generic<T: Default>(a: Array<T, Len<6>>) -> (Array<T, Len<2>>, Array<T, Len<4>>) {
+        let _: AtMost<Len<2>, Len<6>> = at_most!(Len<2>, Len<6>);
+        a.cast(same_len!(Len<6>, Sum<Len<2>, Len<4>>)).parts()
+    }
+    let (x, y) = generic(Array::from([1, 2, 3, 4, 5, 6]));
+    assert_eq!((x[1], y[0]), (2, 3));
+
+    trait Block {
+        type Size: ArrayLen;
+        const HALVES: SameLen<Self::Size, Sum<Len<8>, Len<8>>>;
+        fn halves(block: &Array<u8, Self::Size>) -> (&Array<u8, Len<8>>, &Array<u8, Len<8>>);
+    }
+
+    struct Cipher;
+
+    impl Block for Cipher {
+        type Size = Len<16>;
+        const HALVES: SameLen<Self::Size, Sum<Len<8>, Len<8>>> =
+            same_len!(Self::Size, Sum<Len<8>, Len<8>>);
+        fn halves(block: &Array<u8, Self::Size>) -> (&Array<u8, Len<8>>, &Array<u8, Len<8>>) {
+            let _: AtMost<Len<8>, Self::Size> = at_most!(Len<8>, Self::Size);
+            block
+                .cast_ref(same_len!(Self::Size, Sum<Len<8>, Len<8>>))
+                .split_ref()
+        }
+    }
+
+    let block = Array::from_fn(|i| i as u8);
+    let (lo, hi) = Cipher::halves(&block);
+    assert_eq!((lo[0], hi[0]), (0, 8));
+    let _ = Cipher::HALVES;
+}
+
+#[test]
+fn len_constant_needs_no_value() {
+    const N: usize = Array::<u8, S7>::LEN;
+    assert_eq!(N, 7);
+    assert_eq!(Array::<(), Prod<Len<3>, S6>>::LEN, 18);
+    assert_eq!(Array::<String, Len<0>>::LEN, 0);
+}
+
+#[test]
+fn at_least_is_at_most_swapped() {
+    let proof: AtLeast<S7, Len<3>> = at_least!(S7, Len<3>);
+    let a: Array<u8, S7> = Array::from_fn(|i| i as u8);
+    assert_eq!(a.prefix_ref(proof).as_slice(), &[0, 1, 2]);
+    let _: AtLeast<S3, S3> = AtLeast::refl();
+    assert!(AtLeast::<Len<2>, S3>::try_new().is_none());
 }

@@ -1,6 +1,9 @@
 [package]
 name = "const-array"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 edition = "2024"
+license = "MIT"
+description = "Ergonomic const generic sized arrays."
+repository = "https://github.com/robinhundt/const-array/"
 
 [dependencies]

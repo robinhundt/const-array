@@ -305,6 +305,53 @@ impl<T, S: ArrayLen> Array<T, S> {
         (unsafe { &mut *prefix.as_mut_ptr().cast() }, rest)
     }
 
+    /// View the last `P::USIZE` elements as an [`Array`].
+    ///
+    /// ```
+    /// use const_array::{at_most, Array, Len};
+    ///
+    /// // E.g. the 8 byte length field at the end of a padded hash block.
+    /// let block: Array<u8, Len<64>> = Array::from_fn(|i| i as u8);
+    /// let len_field: &Array<u8, Len<8>> = block.suffix_ref(at_most!(Len<8>, Len<64>));
+    /// assert_eq!(len_field[0], 56);
+    /// ```
+    pub const fn suffix_ref<P: ArrayLen>(&self, proof: AtMost<P, S>) -> &Array<T, P> {
+        self.split_suffix(proof).1
+    }
+
+    /// View the last `P::USIZE` elements as a mutable [`Array`].
+    pub const fn suffix_mut<P: ArrayLen>(&mut self, proof: AtMost<P, S>) -> &mut Array<T, P> {
+        self.split_suffix_mut(proof).1
+    }
+
+    /// Split into a slice of the rest and the last `P::USIZE` elements, as an
+    /// [`Array`]. See [`Array::split_prefix`].
+    pub const fn split_suffix<P: ArrayLen>(&self, _proof: AtMost<P, S>) -> (&[T], &Array<T, P>) {
+        const { Array::<T, P>::LAYOUT_OK };
+        // By `AtMost`'s invariant, `P::USIZE <= S::USIZE`, so this neither
+        // overflows nor panics.
+        let (rest, suffix) = self.as_slice().split_at(S::USIZE - P::USIZE);
+        // SAFETY: `suffix` holds `P::USIZE` elements, and `Array<T, P>` is laid
+        // out as `[T; P::USIZE]`. The result borrows from `self`.
+        (rest, unsafe { &*suffix.as_ptr().cast() })
+    }
+
+    /// Split into a mutable slice of the rest and the last `P::USIZE`
+    /// elements, as a mutable [`Array`].
+    pub const fn split_suffix_mut<P: ArrayLen>(
+        &mut self,
+        _proof: AtMost<P, S>,
+    ) -> (&mut [T], &mut Array<T, P>) {
+        const { Array::<T, P>::LAYOUT_OK };
+        // By `AtMost`'s invariant, `P::USIZE <= S::USIZE`, so this neither
+        // overflows nor panics.
+        let (rest, suffix) = self.as_mut_slice().split_at_mut(S::USIZE - P::USIZE);
+        // SAFETY: `suffix` holds `P::USIZE` elements, and `Array<T, P>` is laid
+        // out as `[T; P::USIZE]`. The result mutably borrows from
+        // `self`.
+        (rest, unsafe { &mut *suffix.as_mut_ptr().cast() })
+    }
+
     /// Construct an array that starts with `prefix` and is filled up with
     /// clones of `fill`.
     ///

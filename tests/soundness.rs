@@ -594,3 +594,32 @@ fn slice_as_chunks_mut_writes_into_the_slice() {
     assert_eq!(data[7], 70);
     assert_eq!(data[13], 130);
 }
+
+#[test]
+fn suffix_views_point_into_the_array() {
+    let mut arr: Array<i32, S6> = Array::from_fn(|i| i as i32);
+    let ptr = arr.as_slice().as_ptr();
+
+    let suffix = arr.suffix_ref(at_most!(Len<4>, S6));
+    assert_eq!(
+        (suffix.as_slice().as_ptr(), suffix.as_array()),
+        (ptr.wrapping_add(2), &[2, 3, 4, 5])
+    );
+
+    let (rest, tail) = arr.split_suffix(at_most!(Len<2>, S6));
+    assert_eq!((rest, tail.as_array()), (&[0, 1, 2, 3][..], &[4, 5]));
+
+    arr.suffix_mut(at_most!(Len<1>, S6))[0] = 50;
+    let (rest, tail) = arr.split_suffix_mut(at_most!(Len<3>, S6));
+    tail[0] = 30;
+    rest[0] = 10;
+    assert_eq!(arr.as_slice(), &[10, 1, 2, 30, 4, 50]);
+    assert_eq!(arr.as_slice().as_ptr(), ptr);
+
+    // The whole array and nothing are valid suffixes.
+    let (none, all) = arr.split_suffix(at_most!(S6, S6));
+    assert_eq!((none.len(), all.len()), (0, 6));
+    let (whole, empty) = arr.split_suffix(at_most!(Len<0>, S6));
+    assert_eq!((whole.len(), empty.len()), (6, 0));
+    assert_eq!(empty.as_slice().as_ptr(), ptr.wrapping_add(6));
+}

@@ -9,8 +9,9 @@ use crate::{ArrayLen, SameLen};
 /// An `AtMost` is required by [`Array::truncate`](crate::Array::truncate),
 /// [`Array::prefix_ref`](crate::Array::prefix_ref),
 /// [`Array::split_prefix`](crate::Array::split_prefix),
+/// [`Array::suffix_ref`](crate::Array::suffix_ref),
 /// [`Array::pad_from`](crate::Array::pad_from) and friends, which take or
-/// fill the first `A::USIZE` elements of an array of size `B`.
+/// fill the first or last `A::USIZE` elements of an array of size `B`.
 ///
 /// It is obtained in the same ways as a [`SameLen`], in order of preference:
 ///

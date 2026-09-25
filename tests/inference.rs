@@ -320,3 +320,67 @@ fn prefix_size_from_annotation_or_proof() {
     }
     assert_eq!(first_part(&a).as_array(), &[0, 1, 2]);
 }
+
+#[test]
+fn derives_on_types_generic_over_a_size() {
+    // `ArrayLen` implies the std traits, so the derives' `S` bounds hold.
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    struct Marker<S: ArrayLen>(S);
+
+    // `Copy` is left out: `Array<u8, S>: Copy` can't be proven for a generic
+    // `S` (see the docs of `Array`'s `Copy` impl).
+    #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    struct Key<S: ArrayLen> {
+        bytes: Array<u8, S>,
+        size: core::marker::PhantomData<S>,
+    }
+
+    fn check<S: ArrayLen>() {
+        let m = Marker::<S>::default();
+        let n = m;
+        assert_eq!(m, n);
+        assert_eq!(m.cmp(&n), core::cmp::Ordering::Equal);
+
+        let k = Key::<S>::default();
+        assert_eq!(k.clone(), k);
+        assert!(k.bytes.iter().all(|&b| b == 0));
+        let _ = format!("{m:?} {k:?}");
+    }
+    check::<S3>();
+    check::<S7>();
+    check::<Prod<Len<2>, S6>>();
+}
+
+#[test]
+fn concat_as_method() {
+    let a = Array::from([1u8, 2]);
+    let b = Array::from([3u8]);
+    let c = Array::from([4u8, 5, 6]);
+    let abc = a.concat(b).concat(c);
+    let _: &Array<u8, Sum<Sum<Len<2>, Len<1>>, Len<3>>> = &abc;
+    assert_eq!(abc, Array::from_fn(|i| i as u8 + 1));
+    // The associated function form still works.
+    let _: Array<u8, Sum<Len<2>, Len<1>>> = Array::concat(a, b);
+    // And in `const` code.
+    const AB: Array<u8, Sum<Len<1>, Len<2>>> = Array::new([1]).concat(Array::new([2, 3]));
+    assert_eq!(AB.as_slice(), &[1, 2, 3]);
+}
+
+#[test]
+fn compare_with_plain_arrays() {
+    let a = Array::from([1, 2, 3]);
+    assert_eq!(a, [1, 2, 3]);
+    assert_eq!([1, 2, 3], a);
+    assert_ne!(a, [1, 2, 4]);
+    // Element types only need to be comparable, like for plain arrays.
+    let b: Array<&str, Len<2>> = Array::from(["a", "b"]);
+    assert!(b == ["a", "b"]);
+}
+
+#[test]
+fn try_from_slice_error_is_an_error() {
+    let err = <&Array<u8, S3>>::try_from(&[1u8, 2][..]).unwrap_err();
+    assert_eq!(err.to_string(), "could not convert slice to array");
+    let boxed: Box<dyn std::error::Error> = Box::new(err);
+    assert_eq!(boxed.to_string(), "could not convert slice to array");
+}

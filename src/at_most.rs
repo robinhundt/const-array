@@ -143,7 +143,8 @@ impl<A: ArrayLen, B: ArrayLen> SameLen<A, B> {
 /// ```
 ///
 /// Like [`same_len!`](crate::same_len!), the macro cannot be used with generic
-/// parameters of the surrounding function.
+/// parameters of the surrounding function or with `Self`. Spell out the
+/// concrete type instead.
 #[macro_export]
 macro_rules! at_most {
     ($a:ty, $b:ty $(,)?) => {{

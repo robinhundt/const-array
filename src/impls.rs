@@ -89,6 +89,20 @@ impl<T: PartialEq, S: ArrayLen> PartialEq for Array<T, S> {
     }
 }
 
+// Only for `Len<N>`, so that arrays of different lengths cannot be compared
+// by accident. Other sizes can be compared with `as_slice`.
+impl<T: PartialEq<U>, U, const N: usize> PartialEq<[U; N]> for Array<T, Len<N>> {
+    fn eq(&self, other: &[U; N]) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
+impl<T: PartialEq<U>, U, const N: usize> PartialEq<Array<U, Len<N>>> for [T; N] {
+    fn eq(&self, other: &Array<U, Len<N>>) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
 impl<T: Eq, S: ArrayLen> Eq for Array<T, S> {}
 
 impl<T: PartialOrd, S: ArrayLen> PartialOrd for Array<T, S> {

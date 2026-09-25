@@ -59,7 +59,7 @@ impl<K1: Kem, K2: Kem, D: Digest> Kem for Hybrid<K1, K2, D> {
     fn generate(rng: &mut impl Rng) -> (DecapsulationKey<Self>, EncapsulationKey<Self>) {
         let (dk1, ek1) = K1::generate(rng);
         let (dk2, ek2) = K2::generate(rng);
-        let dk = Array::concat(Array::concat(dk1, dk2), ek2.clone());
+        let dk = dk1.concat(dk2).concat(ek2.clone());
         (dk, Array::concat(ek1, ek2))
     }
 

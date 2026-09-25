@@ -1,6 +1,8 @@
 //! The [`Array`] type and its operations.
 
 use core::{
+    error::Error,
+    fmt,
     mem::{self, ManuallyDrop, MaybeUninit},
     panic::{RefUnwindSafe, UnwindSafe},
     ptr, slice,
@@ -332,6 +334,34 @@ impl<T, S: ArrayLen> Array<T, S> {
         }
     }
 
+    /// Concatenate `self` and `other`. This is the inverse of
+    /// [`Array::parts`].
+    ///
+    /// ```
+    /// use const_array::{Array, Len, Sum};
+    ///
+    /// let a = Array::from([1u8, 2]);
+    /// let b = Array::from([3u8]);
+    /// let c = Array::from([4u8, 5, 6]);
+    /// let abc: Array<u8, Sum<Sum<Len<2>, Len<1>>, Len<3>>> = a.concat(b).concat(c);
+    /// assert_eq!(abc.as_slice(), &[1, 2, 3, 4, 5, 6]);
+    /// ```
+    pub const fn concat<B: ArrayLen>(self, other: Array<T, B>) -> Array<T, Sum<S, B>> {
+        const { Array::<T, Sum<S, B>>::LAYOUT_OK };
+        let mut out = MaybeUninit::<Array<T, Sum<S, B>>>::uninit();
+        let concat: *mut Concat<S::ArrayType<T>, B::ArrayType<T>> = out.as_mut_ptr().cast();
+        // SAFETY: `Array<T, Sum<S, B>>` is `repr(transparent)` over `Concat`,
+        // and `Self` and `Array<T, B>` are `repr(transparent)` over its
+        // fields. The writes move `self` and `other` into the fields of `out`,
+        // which initializes it. Unlike `Array(Concat(self.0, other.0))`, this
+        // is allowed in a `const fn`.
+        unsafe {
+            ptr::write((&raw mut (*concat).0).cast(), self);
+            ptr::write((&raw mut (*concat).1).cast(), other);
+            out.assume_init()
+        }
+    }
+
     /// Wrap a reference to the inner array type into an [`Array`].
     const fn wrap_ref(inner: &S::ArrayType<T>) -> &Self {
         // SAFETY: `Array` is `repr(transparent)` over `S::ArrayType<T>`. The
@@ -348,25 +378,8 @@ impl<T, S: ArrayLen> Array<T, S> {
 }
 
 impl<T, A: ArrayLen, B: ArrayLen> Array<T, Sum<A, B>> {
-    /// Concatenate two [`Arrays`][`Array`]. This is the inverse of
-    /// [`Array::parts`].
-    pub const fn concat(a: Array<T, A>, b: Array<T, B>) -> Self {
-        const { Self::LAYOUT_OK };
-        let mut out = MaybeUninit::<Self>::uninit();
-        let concat: *mut Concat<A::ArrayType<T>, B::ArrayType<T>> = out.as_mut_ptr().cast();
-        // SAFETY: `Self` is `repr(transparent)` over `Concat`, and `Array<T,
-        // A>` and `Array<T, B>` are `repr(transparent)` over its
-        // fields. The writes move `a` and `b` into the fields of `out`,
-        // which initializes it. Unlike `Array(Concat(a.0, b.0))`, this
-        // is allowed in a `const fn`.
-        unsafe {
-            ptr::write((&raw mut (*concat).0).cast(), a);
-            ptr::write((&raw mut (*concat).1).cast(), b);
-            out.assume_init()
-        }
-    }
-
-    /// Split a concatenated [`Array`] into its parts.
+    /// Split a concatenated [`Array`] into its parts. This is the inverse of
+    /// [`Array::concat`].
     pub const fn parts(self) -> (Array<T, A>, Array<T, B>) {
         const { Self::LAYOUT_OK };
         let me = ManuallyDrop::new(self);
@@ -464,7 +477,7 @@ impl<T, A: ArrayLen, B: ArrayLen> Array<T, Prod<A, B>> {
 /// use const_array::{same_len, Array, Len, Sum};
 ///
 /// const PREFIX: Array<u8, Len<4>> = Array::new(*b"conn");
-/// const NONCE: Array<u8, Sum<Len<4>, Len<8>>> = Array::concat(PREFIX, Array::new([0; 8]));
+/// const NONCE: Array<u8, Sum<Len<4>, Len<8>>> = PREFIX.concat(Array::new([0; 8]));
 /// const FLAT: Array<u8, Len<12>> = NONCE.cast(same_len!(Sum<Len<4>, Len<8>>, Len<12>));
 /// assert_eq!(FLAT.as_array()[..4], *b"conn");
 /// ```
@@ -508,6 +521,14 @@ impl<T, const N: usize> Array<T, Len<N>> {
 /// Error when converting a slice into an [`Array`].
 #[derive(Debug, Copy, Clone)]
 pub struct TryFromSliceError(());
+
+impl fmt::Display for TryFromSliceError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("could not convert slice to array")
+    }
+}
+
+impl Error for TryFromSliceError {}
 
 impl<T, S: ArrayLen> TryFrom<&[T]> for &Array<T, S> {
     type Error = TryFromSliceError;

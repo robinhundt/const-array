@@ -10,7 +10,11 @@ use core::{
 
 use crate::{ArrayLen, ArrayType, AtMost, Concat, Len, Prod, SameLen, Sum};
 
-/// A generic array for a type `T` and an [`ArrayLen`] `S`.
+/// An array of `S::USIZE` elements of type `T`, laid out as `[T; S::USIZE]`.
+///
+/// The size `S` is a [`Len`], [`Sum`] or [`Prod`]. Its structure determines
+/// which operations are available without a cast, e.g. [`Array::split_ref`]
+/// for a [`Sum`]. See the [crate docs](crate) for an overview.
 // `Array` is `repr(transparent)` over `S::ArrayType<T>`, so by the `ArrayLen`
 // and `ArrayType` invariants, `Array<T, S>` is laid out as `[T; S::USIZE]` for
 // every `T` and `S`. The unsafe code in this crate relies on this.

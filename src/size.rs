@@ -1,0 +1,231 @@
+//! Array lengths and the array types backing them.
+
+use core::{
+    array, fmt,
+    hash::{Hash, Hasher},
+    marker::PhantomData,
+    ptr, slice,
+};
+
+use crate::sealed;
+
+/// Trait for arrays of type `T`.
+///
+/// This abstracts over plain arrays `[T; LEN]`, concatenations
+/// of arrays [`Concat`] and arrays of arrays [`Repeat`].
+///
+/// # Safety
+/// `Self` must be *laid out as* `[T; Self::LEN]`: it has the same size,
+/// alignment and validity invariant, and consists of nothing but those
+/// `Self::LEN` values of `T`. Values and references can then be reinterpreted
+/// between `Self` and `[T; Self::LEN]` in both directions, and `Self` is
+/// `Send`, `Sync`, etc. exactly when `T` is.
+///
+/// Unsafe code in this crate relies on this for every `T`. The trait is
+/// sealed, so the only implementations are the ones in this module.
+pub unsafe trait ArrayType<T>: sealed::Sealed + Sized {
+    /// The length of the array.
+    const LEN: usize;
+
+    /// Build a new array from the provided closure.
+    ///
+    /// The element at index `i` of the returned array is `f(offset + i)`.
+    fn build<F: FnMut(usize) -> T>(f: F, offset: usize) -> Self;
+
+    #[doc(hidden)]
+    /// Clone the array.
+    ///
+    /// This method is a work-around so that we can have a `Clone`
+    /// implementation that only has a `T: Clone` bound and which
+    /// can make use of the std library specialization of Clone
+    /// for Copy types.
+    fn clone_array(&self) -> Self
+    where
+        T: Clone;
+}
+
+// SAFETY: `Self` is `[T; Self::LEN]`.
+unsafe impl<T, const N: usize> ArrayType<T> for [T; N] {
+    const LEN: usize = N;
+
+    fn build<F: FnMut(usize) -> T>(mut f: F, offset: usize) -> Self {
+        array::from_fn(|i| f(offset + i))
+    }
+
+    fn clone_array(&self) -> Self
+    where
+        T: Clone,
+    {
+        <[T; N] as Clone>::clone(self)
+    }
+}
+
+/// Concatenation of two [`Arrays`](crate::Array).
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct Concat<A, B>(pub A, pub B);
+
+// SAFETY: By their invariants, `A` and `B` are laid out as `[T; A::LEN]` and
+// `[T; B::LEN]`. Both have alignment `align_of::<T>()` and a size that is a
+// multiple of it, so `repr(C)` places `B` directly after `A` without padding.
+// `Concat` is thus laid out as `[T; A::LEN + B::LEN]` and holds only those
+// values of `T`.
+unsafe impl<T, A: ArrayType<T>, B: ArrayType<T>> ArrayType<T> for Concat<A, B> {
+    const LEN: usize = A::LEN + B::LEN;
+
+    fn build<F: FnMut(usize) -> T>(mut f: F, offset: usize) -> Self {
+        Concat(A::build(&mut f, offset), B::build(&mut f, offset + A::LEN))
+    }
+
+    fn clone_array(&self) -> Self
+    where
+        T: Clone,
+    {
+        Concat(self.0.clone_array(), self.1.clone_array())
+    }
+}
+
+/// An array `O` of arrays `I`, flattened into a single array.
+///
+/// This backs [`Prod`] sizes. `I` is only a parameter so that the element
+/// type of `O` can be named.
+#[repr(transparent)]
+pub struct Repeat<I, O>(pub O, PhantomData<I>);
+
+// Manual impls, because deriving them would add unnecessary bounds on `I`.
+impl<I, O: Clone> Clone for Repeat<I, O> {
+    fn clone(&self) -> Self {
+        Repeat(self.0.clone(), PhantomData)
+    }
+}
+
+impl<I, O: Copy> Copy for Repeat<I, O> {}
+
+// SAFETY: By their invariants, `O` is laid out as `[I; O::LEN]` and `I` as
+// `[T; I::LEN]`. `Repeat` is `repr(transparent)` over `O`, so it is laid out as
+// `[[T; I::LEN]; O::LEN]`, which is `[T; I::LEN * O::LEN]`, and holds only
+// those values of `T`.
+unsafe impl<T, I: ArrayType<T>, O: ArrayType<I>> ArrayType<T> for Repeat<I, O> {
+    const LEN: usize = I::LEN * O::LEN;
+
+    fn build<F: FnMut(usize) -> T>(mut f: F, offset: usize) -> Self {
+        Repeat(
+            O::build(|j| I::build(&mut f, offset + j * I::LEN), 0),
+            PhantomData,
+        )
+    }
+
+    fn clone_array(&self) -> Self
+    where
+        T: Clone,
+    {
+        // SAFETY: By `O`'s invariant, `self.0` is laid out as `[I; O::LEN]`.
+        // The slice borrows from `self`.
+        let outer: &[I] = unsafe { slice::from_raw_parts(ptr::from_ref(&self.0).cast(), O::LEN) };
+        Repeat(O::build(|j| outer[j].clone_array(), 0), PhantomData)
+    }
+}
+
+/// Trait for valid [`Array`](crate::Array) lengths.
+///
+/// This is either a plain length [`Len`], a sum of lengths [`Sum`] or a
+/// product of lengths [`Prod`].
+///
+/// # Safety
+/// For every `T`, `<Self::ArrayType<T> as ArrayType<T>>::LEN == Self::USIZE`.
+/// With the [`ArrayType`] invariant, `Self::ArrayType<T>` is thus laid out as
+/// `[T; Self::USIZE]` for every `T`.
+pub unsafe trait ArrayLen: sealed::Sealed {
+    /// The number of elements.
+    const USIZE: usize;
+
+    /// The array type for this length. It has `Self::USIZE` elements.
+    type ArrayType<T>: ArrayType<T>;
+}
+
+/// A simple [`ArrayLen`] over a const generic `N`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Len<const N: usize> {}
+/// The sum of two [`ArrayLens`][`ArrayLen`].
+pub struct Sum<A, B>(PhantomData<(A, B)>);
+/// The product of two [`ArrayLens`][`ArrayLen`]: `A` chunks of `B` elements.
+pub struct Prod<A, B>(PhantomData<(A, B)>);
+
+// The following traits are implemented manually for `Sum` and `Prod`, because
+// deriving them would add unnecessary bounds on `A` and `B`. They are needed so
+// that `#[derive]`s on user types that are generic over an `ArrayLen` work.
+impl<A, B> Clone for Sum<A, B> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<A, B> Copy for Sum<A, B> {}
+
+impl<A, B> fmt::Debug for Sum<A, B> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Sum")
+    }
+}
+
+impl<A, B> PartialEq for Sum<A, B> {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+impl<A, B> Eq for Sum<A, B> {}
+
+impl<A, B> Hash for Sum<A, B> {
+    fn hash<H: Hasher>(&self, _state: &mut H) {}
+}
+
+impl<A, B> Clone for Prod<A, B> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<A, B> Copy for Prod<A, B> {}
+
+impl<A, B> fmt::Debug for Prod<A, B> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Prod")
+    }
+}
+
+impl<A, B> PartialEq for Prod<A, B> {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+impl<A, B> Eq for Prod<A, B> {}
+
+impl<A, B> Hash for Prod<A, B> {
+    fn hash<H: Hasher>(&self, _state: &mut H) {}
+}
+
+// SAFETY: `[T; N]::LEN` is `N`.
+unsafe impl<const N: usize> ArrayLen for Len<N> {
+    const USIZE: usize = N;
+
+    type ArrayType<T> = [T; N];
+}
+
+// SAFETY: `Concat::LEN` is `A::ArrayType<T>::LEN + B::ArrayType<T>::LEN`, which
+// is `A::USIZE + B::USIZE` by their invariants.
+unsafe impl<A: ArrayLen, B: ArrayLen> ArrayLen for Sum<A, B> {
+    const USIZE: usize = A::USIZE + B::USIZE;
+
+    type ArrayType<T> = Concat<A::ArrayType<T>, B::ArrayType<T>>;
+}
+
+// SAFETY: `Repeat::LEN` is `I::LEN * O::LEN` with `I = B::ArrayType<T>` and
+// `O = A::ArrayType<I>`. By their invariants, these are `B::USIZE` and
+// `A::USIZE`.
+unsafe impl<A: ArrayLen, B: ArrayLen> ArrayLen for Prod<A, B> {
+    const USIZE: usize = A::USIZE * B::USIZE;
+
+    type ArrayType<T> = Repeat<B::ArrayType<T>, A::ArrayType<B::ArrayType<T>>>;
+}

@@ -1,0 +1,19 @@
+error[E0401]: can't use generic parameters from outer item
+ --> tests/compile_fail/same_len_generic.rs:4:28
+  |
+3 | fn generic<S: ArrayLen>() {
+  |            - type parameter from outer item
+4 |     let _proof = same_len!(S, Len<32>);
+  |                  ----------^----------
+  |                  |         |
+  |                  |         use of generic parameter from outer item
+  |                  generic parameter used in this inner constant item
+  |
+  = note: nested items are independent from their parent item for everything except for privacy and name resolution
+  = note: a `const` is a separate item from the item that contains it
+help: try using a local `let` binding instead
+ --> src/same_len.rs
+  |
+    -         const PROOF: $crate::SameLen<$a, $b> = match $crate::SameLen::<$a, $b>::try_new() {
+    +         let PROOF: $crate::SameLen<$a, $b> = match $crate::SameLen::<$a, $b>::try_new() {
+    |

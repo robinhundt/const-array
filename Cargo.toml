@@ -7,3 +7,6 @@ description = "Ergonomic const generic sized arrays."
 repository = "https://github.com/robinhundt/const-array/"
 
 [dependencies]
+
+[dev-dependencies]
+trybuild = "1.0.121"

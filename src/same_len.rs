@@ -1,0 +1,177 @@
+//! Proofs that two sizes have the same length.
+
+use core::{fmt, marker::PhantomData};
+
+use crate::ArrayLen;
+
+/// Proof that the [`ArrayLens`][`ArrayLen`] `A` and `B` have the same length.
+///
+/// A `SameLen` is required by [`Array::cast`](crate::Array::cast) and friends
+/// to reinterpret an array of one size as an array of another size with the
+/// same length, e.g. `Len<6>` and `Sum<Len<2>, Len<4>>`.
+///
+/// Ways to obtain one, in order of preference:
+///
+/// 1. For concrete sizes, the [`same_len!`](crate::same_len!) macro. It fails
+///    at compile time, already during `cargo check`, if the lengths differ.
+/// 2. In generic code where the lengths depend on what the *caller*
+///    instantiates, take a `SameLen` as a parameter. This makes the requirement
+///    part of the signature, and callers with concrete types create it with
+///    `same_len!`.
+/// 3. In generic code where the lengths are equal for every instantiation the
+///    caller can choose, [`SameLen::checked`]. A mismatch is a bug in the code
+///    that calls it, and it is only reported when the code is monomorphized.
+/// 4. [`SameLen::try_new`], to handle a mismatch at runtime.
+// Invariant: A `SameLen<A, B>` only exists if `A::USIZE == B::USIZE`. Unsafe
+// code relies on this, so every constructor must ensure it.
+pub struct SameLen<A, B>(PhantomData<(A, B)>);
+
+// Manual impls, because deriving them would add unnecessary bounds on `A`
+// and `B`.
+impl<A, B> Clone for SameLen<A, B> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<A, B> Copy for SameLen<A, B> {}
+
+impl<A, B> fmt::Debug for SameLen<A, B> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("SameLen")
+    }
+}
+
+impl<A: ArrayLen, B: ArrayLen> SameLen<A, B> {
+    /// Returns a proof that `A` and `B` have the same length, or `None` if
+    /// they do not.
+    ///
+    /// The check only involves constants and is optimized away. Prefer
+    /// [`same_len!`](crate::same_len!) for concrete sizes, which turns a
+    /// mismatch into a compile error.
+    pub const fn try_new() -> Option<Self> {
+        if A::USIZE == B::USIZE {
+            // Invariant: Checked above.
+            Some(SameLen(PhantomData))
+        } else {
+            None
+        }
+    }
+
+    /// Returns a proof that `A` and `B` have the same length, and fails to
+    /// compile when monomorphized with sizes that do not.
+    ///
+    /// This is for generic code in which the lengths are equal for every
+    /// instantiation the caller can choose, but in which the compiler cannot
+    /// see it, e.g. reordering the parts of a [`Sum`](crate::Sum):
+    ///
+    /// ```
+    /// use const_array::{Array, ArrayLen, SameLen, Sum};
+    ///
+    /// fn rotate<T, A: ArrayLen, B: ArrayLen, C: ArrayLen>(
+    ///     a: Array<T, Sum<Sum<A, B>, C>>,
+    /// ) -> Array<T, Sum<A, Sum<B, C>>> {
+    ///     a.cast(SameLen::checked())
+    /// }
+    /// ```
+    ///
+    /// # Pitfall: not reported by `cargo check`
+    ///
+    /// The check runs when the calling code is monomorphized. `cargo check`
+    /// and rust-analyzer do not report a mismatch, only `cargo build` does,
+    /// and only for the instantiations that are actually built. If the
+    /// lengths depend on the caller's choice of types, take a `SameLen`
+    /// parameter instead, so a mismatch is a type error at the call site:
+    ///
+    /// ```compile_fail
+    /// use const_array::{Array, ArrayLen, Len, SameLen};
+    ///
+    /// fn to_32<S: ArrayLen>(a: Array<u8, S>) -> Array<u8, Len<32>> {
+    ///     a.cast(SameLen::checked())
+    /// }
+    ///
+    /// let _ = to_32::<Len<31>>(Array::default());
+    /// ```
+    pub const fn checked() -> Self {
+        const {
+            assert!(
+                A::USIZE == B::USIZE,
+                "SameLen::checked: the sizes have different lengths"
+            )
+        };
+        // Invariant: Checked above.
+        SameLen(PhantomData)
+    }
+
+    /// If `A` has the same length as `B`, then `B` has the same length as `A`.
+    ///
+    /// Useful to cast an array back to its original size, so a single proof
+    /// parameter suffices:
+    ///
+    /// ```
+    /// use const_array::{Array, ArrayLen, SameLen, Len, Sum};
+    ///
+    /// fn swap_halves<S: ArrayLen>(
+    ///     a: Array<u8, S>,
+    ///     proof: SameLen<S, Sum<Len<32>, Len<32>>>,
+    /// ) -> Array<u8, S> {
+    ///     let (lo, hi) = a.cast(proof).parts();
+    ///     Array::concat(hi, lo).cast(proof.symm())
+    /// }
+    /// ```
+    pub const fn symm(self) -> SameLen<B, A> {
+        // Invariant: Equality is symmetric.
+        SameLen(PhantomData)
+    }
+}
+
+impl<A: ArrayLen> SameLen<A, A> {
+    /// Every size has the same length as itself.
+    ///
+    /// Useful in generic code, where [`same_len!`](crate::same_len!) cannot be
+    /// used, to pass a proof for sizes that are known to be the same type,
+    /// e.g. through an associated type bound.
+    pub const fn refl() -> Self {
+        // Invariant: `A::USIZE == A::USIZE`.
+        SameLen(PhantomData)
+    }
+}
+
+/// Create a [`SameLen`] proof for two concrete [`ArrayLens`][`ArrayLen`].
+///
+/// Fails to compile if the lengths differ:
+///
+/// ```
+/// use const_array::{same_len, SameLen, Len, Sum};
+///
+/// let proof: SameLen<Len<6>, Sum<Len<2>, Len<4>>> = same_len!(Len<6>, Sum<Len<2>, Len<4>>);
+/// ```
+///
+/// ```compile_fail
+/// use const_array::{same_len, Len};
+///
+/// let proof = same_len!(Len<6>, Len<7>);
+/// ```
+///
+/// The macro cannot be used with generic parameters of the surrounding
+/// function. Generic code should take a [`SameLen`] as a parameter instead:
+///
+/// ```compile_fail
+/// use const_array::{same_len, ArrayLen, Len};
+///
+/// fn generic<S: ArrayLen>() {
+///     let proof = same_len!(S, Len<6>);
+/// }
+/// ```
+#[macro_export]
+macro_rules! same_len {
+    ($a:ty, $b:ty $(,)?) => {{
+        const PROOF: $crate::SameLen<$a, $b> = match $crate::SameLen::<$a, $b>::try_new() {
+            ::core::option::Option::Some(proof) => proof,
+            ::core::option::Option::None => {
+                ::core::panic!("same_len!: the sizes have different lengths")
+            }
+        };
+        PROOF
+    }};
+}

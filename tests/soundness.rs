@@ -563,3 +563,34 @@ fn pad_from_moves_the_prefix_and_clones_the_fill() {
     }
     assert_eq!(counter.get(), 3);
 }
+
+#[test]
+fn slice_as_chunks_points_into_the_slice() {
+    let data: Vec<i32> = (0..14).collect();
+    let (chunks, rest) = Array::<i32, S6>::slice_as_chunks(&data);
+    assert_eq!((chunks.len(), rest), (2, &[12, 13][..]));
+    assert_eq!(chunks[0].as_slice().as_ptr(), data.as_ptr());
+    assert_eq!(chunks[1].as_slice(), &data[6..12]);
+
+    let (chunks, rest) = Array::<i32, S6>::slice_as_chunks(&data[..5]);
+    assert_eq!((chunks.len(), rest.len()), (0, 5));
+    let (chunks, rest) = Array::<i32, S6>::slice_as_chunks(&[]);
+    assert_eq!((chunks.len(), rest.len()), (0, 0));
+
+    let zsts = [(); 7];
+    let (chunks, rest) = Array::<(), Len<3>>::slice_as_chunks(&zsts);
+    assert_eq!((chunks.len(), rest.len()), (2, 1));
+}
+
+#[test]
+fn slice_as_chunks_mut_writes_into_the_slice() {
+    let mut data: Vec<i32> = (0..14).collect();
+    let (chunks, rest) = Array::<i32, S6>::slice_as_chunks_mut(&mut data);
+    let (a, _) = chunks[1].split_mut();
+    a[1] = 70;
+    chunks[0][5] = 50;
+    rest[1] = 130;
+    assert_eq!(data[5], 50);
+    assert_eq!(data[7], 70);
+    assert_eq!(data[13], 130);
+}

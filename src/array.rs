@@ -84,6 +84,58 @@ impl<T, S: ArrayLen> Array<T, S> {
         unsafe { slice::from_raw_parts_mut(ptr::from_mut(self).cast(), S::USIZE) }
     }
 
+    /// Split a slice into [`Array`]s and the remaining elements. Like
+    /// [`<[T]>::as_chunks`](slice::as_chunks), it fails to compile for a size
+    /// of length 0.
+    ///
+    /// ```
+    /// use const_array::{Array, Len};
+    ///
+    /// // E.g. the full blocks of a message, and the bytes left to buffer.
+    /// let data = [0u8; 100];
+    /// let (blocks, rest) = Array::<u8, Len<16>>::slice_as_chunks(&data);
+    /// assert_eq!((blocks.len(), rest.len()), (6, 4));
+    /// ```
+    ///
+    /// ```compile_fail
+    /// use const_array::{Array, Len};
+    ///
+    /// let _ = Array::<u8, Len<0>>::slice_as_chunks(&[1, 2, 3]);
+    /// ```
+    pub const fn slice_as_chunks(slice: &[T]) -> (&[Self], &[T]) {
+        const { Self::LAYOUT_OK };
+        const { assert!(S::USIZE != 0, "Array::slice_as_chunks: the chunk size is 0") };
+        let len = slice.len() / S::USIZE;
+        let (chunks, rest) = slice.split_at(len * S::USIZE);
+        // SAFETY: `chunks` holds `len * S::USIZE` elements, and `Self` is laid
+        // out as `[T; S::USIZE]`, so they are `len` values of `Self`. The
+        // result borrows from `slice`.
+        (
+            unsafe { slice::from_raw_parts(chunks.as_ptr().cast(), len) },
+            rest,
+        )
+    }
+
+    /// Mutable version of [`Array::slice_as_chunks`].
+    pub const fn slice_as_chunks_mut(slice: &mut [T]) -> (&mut [Self], &mut [T]) {
+        const { Self::LAYOUT_OK };
+        const {
+            assert!(
+                S::USIZE != 0,
+                "Array::slice_as_chunks_mut: the chunk size is 0"
+            )
+        };
+        let len = slice.len() / S::USIZE;
+        let (chunks, rest) = slice.split_at_mut(len * S::USIZE);
+        // SAFETY: `chunks` holds `len * S::USIZE` elements, and `Self` is laid
+        // out as `[T; S::USIZE]`, so they are `len` values of `Self`. The
+        // result mutably borrows from `slice`.
+        (
+            unsafe { slice::from_raw_parts_mut(chunks.as_mut_ptr().cast(), len) },
+            rest,
+        )
+    }
+
     /// Construct a new array from a function.
     ///
     /// The function is called with each index of the array in order.

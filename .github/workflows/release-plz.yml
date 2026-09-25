@@ -1,0 +1,153 @@
+name: Release-plz
+
+permissions: {}
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Checks whether the version in Cargo.toml is already on crates.io. This job
+  # has no secrets and no write permissions. It exists so that the approval-gated
+  # release job below is only started (and only asks for approval) when there
+  # is actually something to publish, i.e., after a release PR has been merged.
+  release-plz-check:
+    name: Check for unpublished version
+    runs-on: ubuntu-latest
+    if: ${{ github.repository_owner == 'robinhundt' }}
+    permissions:
+      contents: read
+    outputs:
+      unpublished: ${{ steps.check.outputs.unpublished }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: stable
+
+      - name: Compare local version with crates.io
+        id: check
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "const-array") | .version')
+          if [ -z "$version" ]; then
+            echo "::error::Could not determine version of const-array"
+            exit 1
+          fi
+          echo "Local version: $version"
+          # Any failure other than a 404 fails the step, so that e.g. a crates.io
+          # outage doesn't start the release job with nothing to release.
+          index="$RUNNER_TEMP/const-array-index"
+          status=$(curl -sS --retry 3 -o "$index" -w '%{http_code}' \
+            -A "const-array release-plz workflow" \
+            https://index.crates.io/co/ns/const-array)
+          case "$status" in
+            200) published=$(jq -r '.vers' "$index") ;;
+            # The crate was never published, which also counts as unpublished.
+            404) published="" ;;
+            *)
+              echo "::error::crates.io index returned HTTP $status"
+              exit 1
+              ;;
+          esac
+          if grep -qxF "$version" <<< "$published"; then
+            echo "Version $version is already published."
+            echo "unpublished=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Version $version is not yet published."
+            echo "unpublished=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  # Publish the unpublished version to crates.io and create the git tag and
+  # GitHub release. Runs in the `release` environment, which requires manual
+  # approval. crates.io authentication uses trusted publishing (OIDC), so no
+  # long-lived crates.io token exists anywhere.
+  release-plz-release:
+    name: Release-plz release
+    needs: release-plz-check
+    if: ${{ needs.release-plz-check.outputs.unpublished == 'true' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: release
+      url: https://crates.io/crates/const-array/${{ needs.release-plz-check.outputs.version }}
+    concurrency:
+      group: release-plz-release
+      cancel-in-progress: false
+    permissions:
+      contents: write # create git tag and GitHub release
+      pull-requests: read # link PRs in the GitHub release notes
+      id-token: write # crates.io trusted publishing
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: stable
+
+      # Without CARGO_REGISTRY_TOKEN, release-plz obtains a short-lived crates.io
+      # token via trusted publishing and revokes it after publishing.
+      - name: Run release-plz
+        uses: release-plz/action@b8d6b54b02889ff2ae2bb82e8b57c3a8fc1683a5 # v0.5.139
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Create a PR with the new versions and changelog, preparing the next release.
+  release-plz-pr:
+    name: Release-plz PR
+    runs-on: ubuntu-latest
+    # Only holds the GitHub App secrets. No approval needed, as this job
+    # can't publish anything.
+    environment: release-pr
+    if: ${{ github.repository_owner == 'robinhundt' }}
+    permissions:
+      contents: read
+    concurrency:
+      group: release-plz-pr-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: stable
+
+      # A GitHub App token is used instead of GITHUB_TOKEN, so that the
+      # release PR triggers the pull_request CI workflows.
+      - name: Generate GitHub token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: generate-token
+        with:
+          client-id: ${{ secrets.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Run release-plz
+        uses: release-plz/action@b8d6b54b02889ff2ae2bb82e8b57c3a8fc1683a5 # v0.5.139
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}

@@ -11,10 +11,10 @@ use core::{
 
 use crate::sealed;
 
-/// Trait for arrays of type `T`.
+/// The storage of an array with elements of type `T`.
 ///
-/// This abstracts over plain arrays `[T; LEN]`, concatenations
-/// of arrays [`Concat`] and arrays of arrays [`Repeat`].
+/// This is an implementation detail of [`ArrayLen::ArrayType`]: plain arrays
+/// `[T; LEN]` for [`Len`], [`Concat`] for [`Sum`] and [`Repeat`] for [`Prod`].
 ///
 /// # Safety
 /// `Self` must be *laid out as* `[T; Self::LEN]`: it has the same size,
@@ -62,7 +62,9 @@ unsafe impl<T, const N: usize> ArrayType<T> for [T; N] {
     }
 }
 
-/// Concatenation of two [`Arrays`](crate::Array).
+/// Two arrays stored one after the other.
+///
+/// This backs [`Sum`] sizes.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct Concat<A, B>(pub A, pub B);
@@ -164,12 +166,18 @@ pub unsafe trait ArrayLen:
     type ArrayType<T>: ArrayType<T>;
 }
 
-/// A simple [`ArrayLen`] over a const generic `N`.
+/// A plain length of `N` elements.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Len<const N: usize>;
-/// The sum of two [`ArrayLens`][`ArrayLen`].
+/// An `A` followed by a `B`.
+///
+/// An [`Array`](crate::Array) of this size can be split into its parts with
+/// [`Array::split_ref`](crate::Array::split_ref) and friends.
 pub struct Sum<A, B>(PhantomData<(A, B)>);
-/// The product of two [`ArrayLens`][`ArrayLen`]: `A` chunks of `B` elements.
+/// `A` chunks of `B` elements.
+///
+/// An [`Array`](crate::Array) of this size can be viewed as an array of chunks
+/// with [`Array::as_chunks`](crate::Array::as_chunks) and friends.
 pub struct Prod<A, B>(PhantomData<(A, B)>);
 
 // The following traits are implemented manually for `Sum` and `Prod`, because

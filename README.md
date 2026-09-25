@@ -35,8 +35,9 @@ let mask = Array::from([0xff; 16]);
 block.zip_mut_with(&mask, |b, m| *b ^= m);
 assert_eq!(block[0], 0xff);
 
-let parts = nonce.concat(Array::from([0; 4]));
-let _: Array<u8, Iv> = parts;
+// Concatenating the parts gives back the structured size.
+let reset: Array<u8, Iv> = nonce.concat(Array::from([0; 4]));
+assert_eq!(reset[12], 0);
 
 // View 4 blocks of 16 bytes as an array of blocks.
 let buf: Array<u8, Prod<Len<4>, Len<16>>> = Array::from_fn(|i| i as u8);
@@ -73,14 +74,14 @@ fn split_signature(sig: &Array<u8, Len<64>>) -> (&Array<u8, Len<32>>, &Array<u8,
 }
 ```
 
-When a generic algorithm is parameterized by a trait, state each flat size once
-per implementation and put its proof in an associated `const` of type
-`SameLen<Self::FlatSize, StructuredSize>`, created with
-`same_len!(Self::FlatSize, StructuredSize)`. In an impl for a concrete type,
-a mismatch is reported by `cargo check`. A default of `SameLen::checked()` in
-the trait saves writing one proof per implementation, but a mismatch is only
-reported by `cargo build`. Internally, pick the structure of each size to match how the
-values are built and split, so casts are only needed at the public boundary.
+When a generic algorithm is parameterized by a trait, each implementation
+states its flat size and proves that it matches the internal structure in an
+associated `const SameLen<Self::FlatSize, Structured>`, created with
+`same_len!`. `cargo check` then reports a mismatch for each concrete impl. A
+default of `SameLen::checked()` in the trait saves the proof per impl, but a
+mismatch is then only reported by `cargo build`. Internally, pick the
+structure of each size to match how values are built and split, so casts are
+only needed at the public boundary.
 
 **Generic constructions expose the `Sum` of their parts.** The key of an
 encrypt-then-MAC AEAD over any cipher `C` and MAC `M` has the size
@@ -101,17 +102,16 @@ types can flatten it with `same_len!`.
 3. To handle a mismatch at runtime, use `Array::try_cast` or
    `SameLen::try_new`.
 
-**Comparisons** work the same way with an `AtMost<A, B>` proof that `A` is
-at most as long as `B`, created with `at_most!`, `AtMost::checked` or
-`AtMost::try_new`, or `at_least!` for `AtLeast<B, A>`. It is required by
-`truncate`, `prefix_ref`, `split_prefix`, `suffix_ref`, `split_suffix` and
-`pad_from`, e.g. for truncated MAC tags or keys padded to a block. A
-requirement of a trait, such as "the digest output fits into one block", can
-be an associated `const` proof that each implementation provides, instead of
-a bound that every generic signature has to repeat. Subtraction can't be
-expressed as a type in generic code, so the rest next to a prefix or suffix
-is a slice. If it is needed as an `Array`, the caller names its size and
-bridges it with `same_len!`, e.g. from `Len<N>` to `Sum<P, R>`.
+**Comparisons** work the same way. An `AtMost<A, B>` proves that `A` is at
+most as long as `B`, and `AtLeast<B, A>` is an alias for it. Create it with
+`at_most!` or `at_least!`, `AtMost::checked` or `AtMost::try_new`. It is
+required by `truncate`, `pad_from` and the prefix and suffix methods, e.g. for
+truncated MAC tags or keys padded to a block. A trait requirement such as
+"the digest output fits into one block" can be an associated `const` proof on
+each implementation, instead of a bound on every generic signature. The rest
+next to a prefix or suffix is a slice, because subtraction can't be expressed
+as a type in generic code. To get it as an `Array`, name its size `R` and cast
+from `Len<N>` to `Sum<P, R>` with `same_len!`.
 
 **Parameter traits.** If the caller picks the sizes but no argument can carry
 a proof, e.g. in `Default::default()`, let the caller implement a trait that

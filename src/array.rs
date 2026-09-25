@@ -10,7 +10,11 @@ use core::{
 
 use crate::{ArrayLen, ArrayType, AtMost, Concat, Len, Prod, SameLen, Sum};
 
-/// A generic array for a type `T` and an [`ArrayLen`] `S`.
+/// An array of `S::USIZE` elements of type `T`, laid out as `[T; S::USIZE]`.
+///
+/// The size `S` is a [`Len`], [`Sum`] or [`Prod`]. Its structure determines
+/// which operations are available without a cast, e.g. [`Array::split_ref`]
+/// for a [`Sum`]. See the [crate docs](crate) for an overview.
 // `Array` is `repr(transparent)` over `S::ArrayType<T>`, so by the `ArrayLen`
 // and `ArrayType` invariants, `Array<T, S>` is laid out as `[T; S::USIZE]` for
 // every `T` and `S`. The unsafe code in this crate relies on this.
@@ -280,8 +284,9 @@ impl<T, S: ArrayLen> Array<T, S> {
     /// of the rest.
     ///
     /// The rest is a slice, because its size `S - P` cannot be expressed as a
-    /// type in generic code. If you need it as an [`Array`], cast to a
-    /// [`Sum`] with [`Array::cast_ref`] and [`Array::split_ref`] instead.
+    /// type in generic code. If you need it as an [`Array`], name its size
+    /// `R`, cast to [`Sum<P, R>`](Sum) with [`Array::cast_ref`] and split
+    /// with [`Array::split_ref`] instead.
     ///
     /// ```
     /// use const_array::{at_most, Array, Len};
@@ -446,8 +451,10 @@ impl<T, S: ArrayLen> Array<T, S> {
         }
     }
 
-    /// Concatenate `self` and `other`. This is the inverse of
-    /// [`Array::parts`].
+    /// Concatenate `self` and `other` into an [`Array`] of size
+    /// [`Sum<S, B>`](Sum). This is the inverse of [`Array::parts`]. To get
+    /// another size of the same length, such as a flat [`Len<N>`], cast the
+    /// result with [`Array::cast`].
     ///
     /// ```
     /// use const_array::{Array, Len, Sum};
@@ -489,6 +496,19 @@ impl<T, S: ArrayLen> Array<T, S> {
     }
 }
 
+/// Conversions between an [`Array`] of size [`Sum<A, B>`](Sum) and its parts
+/// of sizes `A` and `B`. None of them move or copy individual elements.
+///
+/// To split an [`Array`] of another size, such as a flat [`Len<N>`], first
+/// cast it to a [`Sum`] of the same length:
+///
+/// ```
+/// use const_array::{same_len, Array, Len, Sum};
+///
+/// let sig: Array<u8, Len<64>> = Array::from_fn(|i| i as u8);
+/// let (r, s) = sig.cast_ref(same_len!(Len<64>, Sum<Len<32>, Len<32>>)).split_ref();
+/// assert_eq!((r[0], s[0]), (0, 32));
+/// ```
 impl<T, A: ArrayLen, B: ArrayLen> Array<T, Sum<A, B>> {
     /// Split a concatenated [`Array`] into its parts. This is the inverse of
     /// [`Array::concat`].
@@ -536,6 +556,17 @@ impl<T, A: ArrayLen, B: ArrayLen> Array<T, Sum<A, B>> {
 /// let rows = matrix.as_chunks();
 /// assert_eq!(rows[1][2], matrix[6]);
 /// assert_eq!(rows[2].as_slice(), &[8, 9, 10, 11]);
+/// ```
+///
+/// To chunk an [`Array`] of another size, first cast it to a [`Prod`] of the
+/// same length:
+///
+/// ```
+/// use const_array::{same_len, Array, Len, Prod};
+///
+/// let buf: Array<u8, Len<64>> = Array::from_fn(|i| i as u8);
+/// let blocks = buf.cast_ref(same_len!(Len<64>, Prod<Len<4>, Len<16>>)).as_chunks();
+/// assert_eq!(blocks[1][0], 16);
 /// ```
 // `Array<T, Prod<A, B>>` is laid out as `[T; A::USIZE * B::USIZE]`.
 // `Array<Array<T, B>, A>` is laid out as `[Array<T, B>; A::USIZE]`, which is

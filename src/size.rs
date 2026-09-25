@@ -46,6 +46,20 @@ pub unsafe trait ArrayType<T>: sealed::Sealed + Sized {
         T: Clone;
 }
 
+/// View an [`ArrayType`] as a slice of its `A::LEN` elements.
+pub(crate) const fn as_slice<T, A: ArrayType<T>>(a: &A) -> &[T] {
+    // SAFETY: By `A`'s invariant, it is laid out as `[T; A::LEN]`. The slice
+    // borrows from `a`.
+    unsafe { slice::from_raw_parts(ptr::from_ref(a).cast(), A::LEN) }
+}
+
+/// View an [`ArrayType`] as a mutable slice of its `A::LEN` elements.
+pub(crate) const fn as_mut_slice<T, A: ArrayType<T>>(a: &mut A) -> &mut [T] {
+    // SAFETY: By `A`'s invariant, it is laid out as `[T; A::LEN]`. The slice
+    // mutably borrows from `a`.
+    unsafe { slice::from_raw_parts_mut(ptr::from_mut(a).cast(), A::LEN) }
+}
+
 // SAFETY: `Self` is `[T; Self::LEN]`.
 unsafe impl<T, const N: usize> ArrayType<T> for [T; N] {
     const LEN: usize = N;
@@ -123,9 +137,7 @@ unsafe impl<T, I: ArrayType<T>, O: ArrayType<I>> ArrayType<T> for Repeat<I, O> {
     where
         T: Clone,
     {
-        // SAFETY: By `O`'s invariant, `self.0` is laid out as `[I; O::LEN]`.
-        // The slice borrows from `self`.
-        let outer: &[I] = unsafe { slice::from_raw_parts(ptr::from_ref(&self.0).cast(), O::LEN) };
+        let outer = as_slice::<I, O>(&self.0);
         Repeat(O::build(|j| outer[j].clone_array(), 0), PhantomData)
     }
 }

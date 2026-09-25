@@ -35,7 +35,7 @@ let mask = Array::from([0xff; 16]);
 block.zip_mut_with(&mask, |b, m| *b ^= m);
 assert_eq!(block[0], 0xff);
 
-let parts = Array::concat(*nonce, Array::from([0; 4]));
+let parts = nonce.concat(Array::from([0; 4]));
 let _: Array<u8, Iv> = parts;
 
 // View 4 blocks of 16 bytes as an array of blocks.
@@ -73,6 +73,15 @@ fn split_signature(sig: &Array<u8, Len<64>>) -> (&Array<u8, Len<32>>, &Array<u8,
 }
 ```
 
+When a generic algorithm is parameterized by a trait, state each flat size once
+per implementation and put its proof in an associated `const` of type
+`SameLen<Self::FlatSize, StructuredSize>`, created with `same_len!` and the
+concrete type name (`Self` can't be used inside the macro). A mismatch is then
+reported by `cargo check`. A default of `SameLen::checked()` in the trait saves
+writing one proof per implementation, but a mismatch is only reported by
+`cargo build`. Internally, pick the structure of each size to match how the
+values are built and split, so casts are only needed at the public boundary.
+
 **Generic constructions expose the `Sum` of their parts.** The key of an
 encrypt-then-MAC AEAD over any cipher `C` and MAC `M` has the size
 `Sum<C::KeySize, M::KeySize>`. It can't be flattened on stable Rust, and it
@@ -102,6 +111,16 @@ provides, instead of a bound that every generic signature has to repeat.
 Subtraction can't be expressed as a type in generic code, so the rest after
 a prefix is a slice. If it is needed as an `Array`, the caller names its
 size and bridges it with `same_len!`, e.g. from `Len<N>` to `Sum<P, R>`.
+
+**Derives** work on types that are generic over a size: every `ArrayLen`
+implements `Copy`, `Debug`, `Default`, `Eq`, `Ord` and `Hash`, so
+`#[derive(Clone, Debug, Default, PartialEq)] struct Key<S: ArrayLen>`
+needs no extra bounds.
+
+**Interop with `typenum`-based crates** such as `generic-array` or
+`hybrid-array` goes through plain arrays at concrete sizes, e.g.
+`let b: [u8; 32] = digest.finalize().into(); Array::new(b)`. An
+`Array<T, Len<N>>` compares equal to a `[T; N]` directly.
 
 ## Examples
 

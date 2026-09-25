@@ -1,7 +1,9 @@
 //! Array lengths and the array types backing them.
 
 use core::{
-    array, fmt,
+    array,
+    cmp::Ordering,
+    fmt::{self, Debug},
     hash::{Hash, Hasher},
     marker::PhantomData,
     ptr, slice,
@@ -131,11 +133,30 @@ unsafe impl<T, I: ArrayType<T>, O: ArrayType<I>> ArrayType<T> for Repeat<I, O> {
 /// This is either a plain length [`Len`], a sum of lengths [`Sum`] or a
 /// product of lengths [`Prod`].
 ///
+/// Every `ArrayLen` implements the standard traits `Copy`, `Debug`, `Default`,
+/// `Eq`, `Ord` and `Hash`, and is `Send + Sync + 'static`. So `#[derive]`s on
+/// types that are generic over an `ArrayLen` work without extra bounds:
+///
+/// ```
+/// use const_array::{Array, ArrayLen, Len, Sum};
+///
+/// #[derive(Clone, Debug, Default, PartialEq)]
+/// struct Key<S: ArrayLen> {
+///     bytes: Array<u8, S>,
+///     size: S,
+/// }
+///
+/// let key = Key::<Sum<Len<16>, Len<16>>>::default();
+/// assert_eq!(key.clone(), key);
+/// ```
+///
 /// # Safety
 /// For every `T`, `<Self::ArrayType<T> as ArrayType<T>>::LEN == Self::USIZE`.
 /// With the [`ArrayType`] invariant, `Self::ArrayType<T>` is thus laid out as
 /// `[T; Self::USIZE]` for every `T`.
-pub unsafe trait ArrayLen: sealed::Sealed {
+pub unsafe trait ArrayLen:
+    sealed::Sealed + Copy + Debug + Default + Eq + Ord + Hash + Send + Sync + 'static
+{
     /// The number of elements.
     const USIZE: usize;
 
@@ -144,16 +165,17 @@ pub unsafe trait ArrayLen: sealed::Sealed {
 }
 
 /// A simple [`ArrayLen`] over a const generic `N`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Len<const N: usize> {}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Len<const N: usize>;
 /// The sum of two [`ArrayLens`][`ArrayLen`].
 pub struct Sum<A, B>(PhantomData<(A, B)>);
 /// The product of two [`ArrayLens`][`ArrayLen`]: `A` chunks of `B` elements.
 pub struct Prod<A, B>(PhantomData<(A, B)>);
 
 // The following traits are implemented manually for `Sum` and `Prod`, because
-// deriving them would add unnecessary bounds on `A` and `B`. They are needed so
-// that `#[derive]`s on user types that are generic over an `ArrayLen` work.
+// deriving them would add unnecessary bounds on `A` and `B`. `ArrayLen`
+// requires them, so that `#[derive]`s on user types that are generic over an
+// `ArrayLen` work.
 impl<A, B> Clone for Sum<A, B> {
     fn clone(&self) -> Self {
         *self
@@ -162,7 +184,7 @@ impl<A, B> Clone for Sum<A, B> {
 
 impl<A, B> Copy for Sum<A, B> {}
 
-impl<A, B> fmt::Debug for Sum<A, B> {
+impl<A, B> Debug for Sum<A, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("Sum")
     }
@@ -180,6 +202,24 @@ impl<A, B> Hash for Sum<A, B> {
     fn hash<H: Hasher>(&self, _state: &mut H) {}
 }
 
+impl<A, B> Default for Sum<A, B> {
+    fn default() -> Self {
+        Sum(PhantomData)
+    }
+}
+
+impl<A, B> PartialOrd for Sum<A, B> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<A, B> Ord for Sum<A, B> {
+    fn cmp(&self, _other: &Self) -> Ordering {
+        Ordering::Equal
+    }
+}
+
 impl<A, B> Clone for Prod<A, B> {
     fn clone(&self) -> Self {
         *self
@@ -188,7 +228,7 @@ impl<A, B> Clone for Prod<A, B> {
 
 impl<A, B> Copy for Prod<A, B> {}
 
-impl<A, B> fmt::Debug for Prod<A, B> {
+impl<A, B> Debug for Prod<A, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("Prod")
     }
@@ -204,6 +244,24 @@ impl<A, B> Eq for Prod<A, B> {}
 
 impl<A, B> Hash for Prod<A, B> {
     fn hash<H: Hasher>(&self, _state: &mut H) {}
+}
+
+impl<A, B> Default for Prod<A, B> {
+    fn default() -> Self {
+        Prod(PhantomData)
+    }
+}
+
+impl<A, B> PartialOrd for Prod<A, B> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<A, B> Ord for Prod<A, B> {
+    fn cmp(&self, _other: &Self) -> Ordering {
+        Ordering::Equal
+    }
 }
 
 // SAFETY: `[T; N]::LEN` is `N`.

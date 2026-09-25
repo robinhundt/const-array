@@ -116,7 +116,7 @@ impl<A: ArrayLen, B: ArrayLen> SameLen<A, B> {
     ///     proof: SameLen<S, Sum<Len<32>, Len<32>>>,
     /// ) -> Array<u8, S> {
     ///     let (lo, hi) = a.cast(proof).parts();
-    ///     Array::concat(hi, lo).cast(proof.symm())
+    ///     hi.concat(lo).cast(proof.symm())
     /// }
     /// ```
     pub const fn symm(self) -> SameLen<B, A> {
@@ -163,13 +163,43 @@ impl<A: ArrayLen> SameLen<A, A> {
 ///     let proof = same_len!(S, Len<6>);
 /// }
 /// ```
+///
+/// For the same reason, `Self` cannot be used inside the macro. In a trait
+/// impl, spell out the concrete type. A common pattern is a flat public size
+/// with an associated `const` that proves it matches the structured size used
+/// internally, checked once per implementing type during `cargo check`:
+///
+/// ```
+/// use const_array::{same_len, ArrayLen, Len, Prod, SameLen, Sum};
+///
+/// trait Params {
+///     type K: ArrayLen;
+///     /// The public, flat size of an encoded key.
+///     type KeySize: ArrayLen;
+///     const KEY_PARTS: SameLen<Self::KeySize, Sum<Prod<Self::K, Len<384>>, Len<32>>>;
+/// }
+///
+/// struct Small;
+///
+/// impl Params for Small {
+///     type K = Len<2>;
+///     type KeySize = Len<800>;
+///     // `same_len!(Len<800>, Sum<Prod<Self::K, ..>, ..>)` would not compile.
+///     const KEY_PARTS: SameLen<Len<800>, Sum<Prod<Len<2>, Len<384>>, Len<32>>> =
+///         same_len!(Len<800>, Sum<Prod<Len<2>, Len<384>>, Len<32>>);
+/// }
+/// ```
 #[macro_export]
 macro_rules! same_len {
     ($a:ty, $b:ty $(,)?) => {{
-        const PROOF: $crate::SameLen<$a, $b> = match $crate::SameLen::<$a, $b>::try_new() {
-            ::core::option::Option::Some(proof) => proof,
-            ::core::option::Option::None => {
-                ::core::panic!("same_len!: the sizes have different lengths")
+        const PROOF: $crate::SameLen<$a, $b> = {
+            // A type error that names both lengths if they differ.
+            let _: [(); <$a as $crate::ArrayLen>::USIZE] = [(); <$b as $crate::ArrayLen>::USIZE];
+            match $crate::SameLen::<$a, $b>::try_new() {
+                ::core::option::Option::Some(proof) => proof,
+                ::core::option::Option::None => {
+                    ::core::panic!("same_len!: the sizes have different lengths")
+                }
             }
         };
         PROOF

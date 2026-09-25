@@ -149,6 +149,6 @@ needs no extra bounds.
 The [`examples`](https://github.com/robinhundt/const-array/tree/main/examples) directory sketches how cryptographic APIs could
 look when built on `Array`: traits for digests, MACs, stream ciphers, AEADs
 and KEMs, and generic constructions over them (HMAC, HKDF, encrypt-then-MAC,
-a hybrid KEM, hash-then-sign, Lamport signatures). The primitives are
-insecure stand-ins that only have the right sizes. Run them with e.g.
+a hybrid KEM, hash-then-sign, Lamport signatures, truncated digests). The
+primitives are insecure stand-ins that only have the right sizes. Run them with e.g.
 `cargo run --example hybrid_kem`.

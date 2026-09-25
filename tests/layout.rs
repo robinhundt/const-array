@@ -8,17 +8,17 @@
 //!   2. `align_of::<Array<T, S>>() == align_of::<T>()`
 //!   3. `<S::ArrayType<T> as ArrayType<T>>::LEN == S::USIZE`
 //!
-//! If any nested `Concat`/`Sum` combination introduced padding or a length
-//! mismatch, the raw-slice construction would be UB. These tests assert the
-//! invariants across a matrix of element types and (possibly deeply nested)
-//! sizes. A violation would surface here (and, for #1/#2, as UB under miri in
-//! the soundness tests).
+//! If any nested `Concat`/`Sum`/`Repeat`/`Prod` combination introduced padding
+//! or a length mismatch, the raw-slice construction would be UB. These tests
+//! assert the invariants across a matrix of element types and (possibly deeply
+//! nested) sizes. A violation would surface here (and, for #1/#2, as UB under
+//! miri in the soundness tests).
 
 use core::mem::{align_of, size_of};
 
-use const_array::{Array, ArraySize, ArrayType, Concat, Sum, U};
+use const_array::{Array, ArrayLen, ArrayType, Concat, Len, Prod, Repeat, Sum};
 
-fn check_invariants<T, S: ArraySize>() {
+fn check_invariants<T, S: ArrayLen>() {
     assert_eq!(
         size_of::<Array<T, S>>(),
         S::USIZE * size_of::<T>(),
@@ -39,15 +39,22 @@ fn check_invariants<T, S: ArraySize>() {
 macro_rules! check_over_sizes {
     ($($t:ty),* $(,)?) => {{
         $(
-            check_invariants::<$t, U<0>>();
-            check_invariants::<$t, U<1>>();
-            check_invariants::<$t, U<5>>();
-            check_invariants::<$t, Sum<U<1>, U<1>>>();
-            check_invariants::<$t, Sum<U<3>, U<4>>>();
-            check_invariants::<$t, Sum<U<0>, U<7>>>();
-            check_invariants::<$t, Sum<U<1>, Sum<U<2>, U<3>>>>();
-            check_invariants::<$t, Sum<Sum<U<2>, U<2>>, Sum<U<1>, U<3>>>>();
-            check_invariants::<$t, Sum<Sum<Sum<U<1>, U<1>>, U<1>>, U<1>>>();
+            check_invariants::<$t, Len<0>>();
+            check_invariants::<$t, Len<1>>();
+            check_invariants::<$t, Len<5>>();
+            check_invariants::<$t, Sum<Len<1>, Len<1>>>();
+            check_invariants::<$t, Sum<Len<3>, Len<4>>>();
+            check_invariants::<$t, Sum<Len<0>, Len<7>>>();
+            check_invariants::<$t, Sum<Len<1>, Sum<Len<2>, Len<3>>>>();
+            check_invariants::<$t, Sum<Sum<Len<2>, Len<2>>, Sum<Len<1>, Len<3>>>>();
+            check_invariants::<$t, Sum<Sum<Sum<Len<1>, Len<1>>, Len<1>>, Len<1>>>();
+            check_invariants::<$t, Prod<Len<3>, Len<4>>>();
+            check_invariants::<$t, Prod<Len<0>, Len<5>>>();
+            check_invariants::<$t, Prod<Len<5>, Len<0>>>();
+            check_invariants::<$t, Prod<Sum<Len<1>, Len<2>>, Len<2>>>();
+            check_invariants::<$t, Prod<Len<2>, Sum<Len<1>, Len<2>>>>();
+            check_invariants::<$t, Sum<Prod<Len<2>, Len<3>>, Len<1>>>();
+            check_invariants::<$t, Prod<Prod<Len<2>, Len<3>>, Prod<Len<1>, Len<2>>>>();
         )*
     }};
 }
@@ -92,8 +99,33 @@ fn concat_is_contiguous_and_padding_free() {
 
 #[test]
 fn usize_matches_manual_sum() {
-    assert_eq!(<U<0> as ArraySize>::USIZE, 0);
-    assert_eq!(<U<5> as ArraySize>::USIZE, 5);
-    assert_eq!(<Sum<U<3>, U<4>> as ArraySize>::USIZE, 7);
-    assert_eq!(<Sum<U<1>, Sum<U<2>, U<3>>> as ArraySize>::USIZE, 6);
+    assert_eq!(<Len<0> as ArrayLen>::USIZE, 0);
+    assert_eq!(<Len<5> as ArrayLen>::USIZE, 5);
+    assert_eq!(<Sum<Len<3>, Len<4>> as ArrayLen>::USIZE, 7);
+    assert_eq!(<Sum<Len<1>, Sum<Len<2>, Len<3>>> as ArrayLen>::USIZE, 6);
+}
+
+#[test]
+fn repeat_is_contiguous_and_padding_free() {
+    assert_eq!(
+        size_of::<Repeat<[u32; 3], [[u32; 3]; 5]>>(),
+        size_of::<[u32; 15]>()
+    );
+    assert_eq!(
+        align_of::<Repeat<[u32; 3], [[u32; 3]; 5]>>(),
+        align_of::<u32>()
+    );
+    assert_eq!(
+        size_of::<Repeat<Concat<[Padded; 1], [Padded; 2]>, [Concat<[Padded; 1], [Padded; 2]>; 2]>>(
+        ),
+        6 * size_of::<Padded>(),
+    );
+}
+
+#[test]
+fn usize_matches_manual_prod() {
+    assert_eq!(<Prod<Len<3>, Len<4>> as ArrayLen>::USIZE, 12);
+    assert_eq!(<Prod<Len<0>, Len<4>> as ArrayLen>::USIZE, 0);
+    assert_eq!(<Prod<Sum<Len<1>, Len<2>>, Len<4>> as ArrayLen>::USIZE, 12);
+    assert_eq!(<Sum<Prod<Len<2>, Len<3>>, Len<1>> as ArrayLen>::USIZE, 7);
 }

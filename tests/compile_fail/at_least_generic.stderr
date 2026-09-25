@@ -1,0 +1,17 @@
+error: constant expression depends on a generic parameter
+ --> tests/compile_fail/at_least_generic.rs:4:5
+  |
+4 |     at_least!(S, Len<1>)
+  |     ^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this may fail depending on what value the parameter takes
+  = note: this error originates in the macro `at_least` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: constant expression depends on a generic parameter
+ --> tests/compile_fail/at_least_generic.rs:4:5
+  |
+4 |     at_least!(S, Len<1>)
+  |     ^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this may fail depending on what value the parameter takes
+  = note: this error originates in the macro `at_least` (in Nightly builds, run with -Z macro-backtrace for more info)

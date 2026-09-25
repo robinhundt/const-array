@@ -103,15 +103,15 @@ types can flatten it with `same_len!`.
 
 **Comparisons** work the same way with an `AtMost<A, B>` proof that `A` is
 at most as long as `B`, created with `at_most!`, `AtMost::checked` or
-`AtMost::try_new`. It is required by `truncate`, `prefix_ref`,
-`split_prefix`, `suffix_ref`, `split_suffix` and `pad_from`, e.g. for
-truncated MAC tags or keys padded to a block. A requirement of a trait, such
-as "the digest output fits into one block", can be an associated `const`
-proof that each implementation provides, instead of a bound that every
-generic signature has to repeat. Subtraction can't be expressed as a type in
-generic code, so the rest next to a prefix or suffix is a slice. If it is
-needed as an `Array`, the caller names its size and bridges it with
-`same_len!`, e.g. from `Len<N>` to `Sum<P, R>`.
+`AtMost::try_new`, or `at_least!` for `AtLeast<B, A>`. It is required by
+`truncate`, `prefix_ref`, `split_prefix`, `suffix_ref`, `split_suffix` and
+`pad_from`, e.g. for truncated MAC tags or keys padded to a block. A
+requirement of a trait, such as "the digest output fits into one block", can
+be an associated `const` proof that each implementation provides, instead of
+a bound that every generic signature has to repeat. Subtraction can't be
+expressed as a type in generic code, so the rest next to a prefix or suffix
+is a slice. If it is needed as an `Array`, the caller names its size and
+bridges it with `same_len!`, e.g. from `Len<N>` to `Sum<P, R>`.
 
 **Parameter traits.** If the caller picks the sizes but no argument can carry
 a proof, e.g. in `Default::default()`, let the caller implement a trait that
@@ -119,18 +119,18 @@ names the sizes and requires the proof as an associated `const`. The impl is
 concrete, so `cargo check` verifies the proof:
 
 ```rust
-use const_array::{at_most, ArrayLen, AtMost, Len};
+use const_array::{at_least, ArrayLen, AtLeast, Len};
 
 trait ModeParams {
     type NonceSize: ArrayLen;
-    const NONCE_NOT_EMPTY: AtMost<Len<1>, Self::NonceSize>;
+    const NONCE_NOT_EMPTY: AtLeast<Self::NonceSize, Len<1>>;
 }
 
 struct Nonce96;
 
 impl ModeParams for Nonce96 {
     type NonceSize = Len<12>;
-    const NONCE_NOT_EMPTY: AtMost<Len<1>, Self::NonceSize> = at_most!(Len<1>, Self::NonceSize);
+    const NONCE_NOT_EMPTY: AtLeast<Self::NonceSize, Len<1>> = at_least!(Self::NonceSize, Len<1>);
 }
 ```
 

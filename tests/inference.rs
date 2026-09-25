@@ -8,7 +8,9 @@
 
 use std::panic::{RefUnwindSafe, UnwindSafe};
 
-use const_array::{Array, ArrayLen, AtMost, Len, Prod, SameLen, Sum, at_most, same_len};
+use const_array::{
+    Array, ArrayLen, AtLeast, AtMost, Len, Prod, SameLen, Sum, at_least, at_most, same_len,
+};
 
 // Readable size aliases.
 type S3 = Len<3>;
@@ -428,4 +430,13 @@ fn len_constant_needs_no_value() {
     assert_eq!(N, 7);
     assert_eq!(Array::<(), Prod<Len<3>, S6>>::LEN, 18);
     assert_eq!(Array::<String, Len<0>>::LEN, 0);
+}
+
+#[test]
+fn at_least_is_at_most_swapped() {
+    let proof: AtLeast<S7, Len<3>> = at_least!(S7, Len<3>);
+    let a: Array<u8, S7> = Array::from_fn(|i| i as u8);
+    assert_eq!(a.prefix_ref(proof).as_slice(), &[0, 1, 2]);
+    let _: AtLeast<S3, S3> = AtLeast::refl();
+    assert!(AtLeast::<Len<2>, S3>::try_new().is_none());
 }

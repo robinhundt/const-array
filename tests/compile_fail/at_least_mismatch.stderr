@@ -1,0 +1,7 @@
+error[E0080]: attempt to compute `16_usize - 24_usize`, which would overflow
+ --> tests/compile_fail/at_least_mismatch.rs:4:18
+  |
+4 |     let _proof = at_least!(Len<16>, Sum<Len<16>, Len<8>>);
+  |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ evaluation of `main::{constant#0}::{constant#0}` failed here
+  |
+  = note: this error originates in the macro `at_least` (in Nightly builds, run with -Z macro-backtrace for more info)

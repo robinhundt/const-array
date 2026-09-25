@@ -29,6 +29,13 @@ use crate::{ArrayLen, SameLen};
 // code relies on this, so every constructor must ensure it.
 pub struct AtMost<A, B>(PhantomData<(A, B)>);
 
+/// Proof that the [`ArrayLen`] `A` is at least as long as the [`ArrayLen`]
+/// `B`, i.e. an [`AtMost<B, A>`](AtMost).
+///
+/// Create it with [`at_least!`](crate::at_least!) or the constructors of
+/// [`AtMost`]. Compiler errors name it `AtMost<B, A>`.
+pub type AtLeast<A, B> = AtMost<B, A>;
+
 // Manual impls, because deriving them would add unnecessary bounds on `A`
 // and `B`.
 impl<A, B> Clone for AtMost<A, B> {
@@ -188,6 +195,39 @@ macro_rules! at_most {
                 ::core::option::Option::Some(proof) => proof,
                 ::core::option::Option::None => {
                     ::core::panic!("at_most!: the first size is longer than the second")
+                }
+            }
+        }
+    };
+}
+
+/// Create an [`AtLeast`] proof for two concrete [`ArrayLens`][`ArrayLen`].
+///
+/// `at_least!(A, B)` is [`at_most!(B, A)`](crate::at_most!), and fails during
+/// `cargo check` if `A` is shorter than `B`:
+///
+/// ```
+/// use const_array::{at_least, AtLeast, Len};
+///
+/// let proof: AtLeast<Len<12>, Len<1>> = at_least!(Len<12>, Len<1>);
+/// ```
+///
+/// ```compile_fail
+/// use const_array::{at_least, Len};
+///
+/// let proof = at_least!(Len<0>, Len<1>);
+/// ```
+#[macro_export]
+macro_rules! at_least {
+    ($a:ty, $b:ty $(,)?) => {
+        // See `same_len!`. The array length underflows if the first size is
+        // shorter, which names both lengths in the error.
+        const {
+            let _ = [(); <$a as $crate::ArrayLen>::USIZE - <$b as $crate::ArrayLen>::USIZE];
+            match $crate::AtLeast::<$a, $b>::try_new() {
+                ::core::option::Option::Some(proof) => proof,
+                ::core::option::Option::None => {
+                    ::core::panic!("at_least!: the first size is shorter than the second")
                 }
             }
         }

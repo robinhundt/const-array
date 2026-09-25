@@ -135,7 +135,7 @@ impl<A: ArrayLen, B: ArrayLen> SameLen<A, B> {
     ///     proof: SameLen<S, Sum<Len<32>, Len<32>>>,
     /// ) -> Array<u8, S> {
     ///     let (lo, hi) = a.cast(proof).parts();
-    ///     hi.concat(lo).cast(proof.symm())
+    ///     hi.concat_with(lo, proof.symm())
     /// }
     /// ```
     pub const fn symm(self) -> SameLen<B, A> {

@@ -159,7 +159,7 @@ fn main() {
     // in half. The digest declares a plain `Len<64>`, so the halves are made
     // available with a compile-time checked cast.
     let prk = Hkdf::<FakeSha512>::extract(None, b"ikm").prk;
-    let (enc_key, mac_key) = prk.cast(same_len!(Len<64>, Sum<Len<32>, Len<32>>)).parts();
+    let (enc_key, mac_key) = prk.parts_with(same_len!(Len<64>, Sum<Len<32>, Len<32>>));
     println!("enc key:    {:02x?}", enc_key);
     println!("mac key:    {:02x?}", mac_key);
 

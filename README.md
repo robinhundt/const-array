@@ -69,7 +69,7 @@ use const_array::{same_len, Array, Len, Sum};
 type Rs = Sum<Len<32>, Len<32>>;
 
 fn split_signature(sig: &Array<u8, Len<64>>) -> (&Array<u8, Len<32>>, &Array<u8, Len<32>>) {
-    sig.cast_ref(same_len!(Len<64>, Rs)).split_ref()
+    sig.split_ref_with(same_len!(Len<64>, Rs))
 }
 ```
 
@@ -111,7 +111,9 @@ be an associated `const` proof that each implementation provides, instead of
 a bound that every generic signature has to repeat. Subtraction can't be
 expressed as a type in generic code, so the rest next to a prefix or suffix
 is a slice. If it is needed as an `Array`, the caller names its size and
-bridges it with `same_len!`, e.g. from `Len<N>` to `Sum<P, R>`.
+bridges it with `same_len!`, e.g. from `Len<N>` to `Sum<P, R>`. `split_ref_with`,
+`split_mut_with` and `parts_with` cast and split in one step, `concat_with` is
+their inverse, and `as_chunks_with` and friends cast and chunk.
 
 **Parameter traits.** If the caller picks the sizes but no argument can carry
 a proof, e.g. in `Default::default()`, let the caller implement a trait that

@@ -70,7 +70,7 @@ impl PrehashSignature for FakeEcdsaP256 {
 
     fn sign_prehash(sk: &SigningKey<Self>, prehash: &Prehash<Self>) -> Signature<Self> {
         let r = sk.zip_with(prehash, |a, b| a ^ b);
-        Array::concat(r, *prehash).cast(same_len!(RS, Len<64>))
+        r.concat_with(*prehash, same_len!(RS, Len<64>))
     }
 
     fn verify_prehash(
@@ -79,7 +79,7 @@ impl PrehashSignature for FakeEcdsaP256 {
         sig: &Signature<Self>,
     ) -> Result<(), Error> {
         // No offsets, no slicing, no runtime length checks.
-        let (r, s) = sig.cast_ref(same_len!(Len<64>, RS)).split_ref();
+        let (r, s) = sig.split_ref_with(same_len!(Len<64>, RS));
         let expected_r = vk.zip_with(prehash, |a, b| a ^ b);
         (ct_eq(r, &expected_r) & ct_eq(s, prehash))
             .then_some(())
@@ -121,7 +121,7 @@ fn expand_seed<D: Digest>(
     seed: &Array<u8, Len<32>>,
     proof: SameLen<D::OutputSize, Sum<Len<32>, Len<32>>>,
 ) -> ExpandedSeed {
-    let (mut scalar, prefix) = D::digest(seed).cast(proof).parts();
+    let (mut scalar, prefix) = D::digest(seed).parts_with(proof);
     // Clamping, as in Ed25519.
     scalar[0] &= 248;
     scalar[31] &= 127;

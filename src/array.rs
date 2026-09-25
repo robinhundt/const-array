@@ -230,6 +230,111 @@ impl<T, S: ArrayLen> Array<T, S> {
         self.cast(SameLen::checked())
     }
 
+    /// Split the [`Array`] into parts of sizes `A` and `B`, which together have
+    /// the same length as `S`.
+    ///
+    /// This is a shorthand for `self.cast(proof).parts()`, e.g. to split an
+    /// array of a flat size at an arbitrary point:
+    ///
+    /// ```
+    /// use const_array::{same_len, Array, Len, Sum};
+    ///
+    /// let key: Array<u8, Len<32>> = Array::from_fn(|i| i as u8);
+    /// let (enc_key, mac_key) = key.parts_with(same_len!(Len<32>, Sum<Len<16>, Len<16>>));
+    /// assert_eq!(enc_key[0], 0);
+    /// assert_eq!(mac_key[0], 16);
+    /// ```
+    pub const fn parts_with<A: ArrayLen, B: ArrayLen>(
+        self,
+        proof: SameLen<S, Sum<A, B>>,
+    ) -> (Array<T, A>, Array<T, B>) {
+        self.cast(proof).parts()
+    }
+
+    /// Split a reference to the [`Array`] into references to parts of sizes
+    /// `A` and `B`, which together have the same length as `S`.
+    ///
+    /// This is a shorthand for `self.cast_ref(proof).split_ref()`:
+    ///
+    /// ```
+    /// use const_array::{same_len, Array, Len, Sum};
+    ///
+    /// // E.g. the `r` and `s` scalars of a 64 byte signature.
+    /// let sig: Array<u8, Len<64>> = Array::from_fn(|i| i as u8);
+    /// let (r, s) = sig.split_ref_with(same_len!(Len<64>, Sum<Len<32>, Len<32>>));
+    /// assert_eq!((r[0], s[0]), (0, 32));
+    /// ```
+    pub const fn split_ref_with<A: ArrayLen, B: ArrayLen>(
+        &self,
+        proof: SameLen<S, Sum<A, B>>,
+    ) -> (&Array<T, A>, &Array<T, B>) {
+        self.cast_ref(proof).split_ref()
+    }
+
+    /// Split a mutable reference to the [`Array`] into mutable references to
+    /// parts of sizes `A` and `B`, which together have the same length as `S`.
+    ///
+    /// This is a shorthand for `self.cast_mut(proof).split_mut()`.
+    pub const fn split_mut_with<A: ArrayLen, B: ArrayLen>(
+        &mut self,
+        proof: SameLen<S, Sum<A, B>>,
+    ) -> (&mut Array<T, A>, &mut Array<T, B>) {
+        self.cast_mut(proof).split_mut()
+    }
+
+    /// View the [`Array`] as an [`Array`] of `A` chunks with `B` elements
+    /// each, where `A * B` has the same length as `S`.
+    ///
+    /// This is a shorthand for `self.cast_ref(proof).as_chunks()`:
+    ///
+    /// ```
+    /// use const_array::{same_len, Array, Len, Prod};
+    ///
+    /// let buf: Array<u8, Len<64>> = Array::from_fn(|i| i as u8);
+    /// let blocks = buf.as_chunks_with(same_len!(Len<64>, Prod<Len<4>, Len<16>>));
+    /// assert_eq!(blocks[1][0], 16);
+    /// ```
+    pub const fn as_chunks_with<A: ArrayLen, B: ArrayLen>(
+        &self,
+        proof: SameLen<S, Prod<A, B>>,
+    ) -> &Array<Array<T, B>, A> {
+        self.cast_ref(proof).as_chunks()
+    }
+
+    /// View the [`Array`] as a mutable [`Array`] of `A` chunks with `B`
+    /// elements each, where `A * B` has the same length as `S`.
+    ///
+    /// This is a shorthand for `self.cast_mut(proof).as_chunks_mut()`.
+    pub const fn as_chunks_mut_with<A: ArrayLen, B: ArrayLen>(
+        &mut self,
+        proof: SameLen<S, Prod<A, B>>,
+    ) -> &mut Array<Array<T, B>, A> {
+        self.cast_mut(proof).as_chunks_mut()
+    }
+
+    /// Split the [`Array`] into an [`Array`] of `A` chunks with `B` elements
+    /// each, where `A * B` has the same length as `S`.
+    ///
+    /// This is a shorthand for `self.cast(proof).into_chunks()`.
+    pub const fn into_chunks_with<A: ArrayLen, B: ArrayLen>(
+        self,
+        proof: SameLen<S, Prod<A, B>>,
+    ) -> Array<Array<T, B>, A> {
+        self.cast(proof).into_chunks()
+    }
+
+    /// Flatten an [`Array`] of `A` chunks with `B` elements each into an
+    /// [`Array`] of size `S`, where `A * B` has the same length as `S`. This
+    /// is the inverse of [`Array::into_chunks_with`].
+    ///
+    /// This is a shorthand for `Array::from_chunks(chunks).cast(proof)`.
+    pub const fn from_chunks_with<A: ArrayLen, B: ArrayLen>(
+        chunks: Array<Array<T, B>, A>,
+        proof: SameLen<Prod<A, B>, S>,
+    ) -> Self {
+        Array::from_chunks(chunks).cast(proof)
+    }
+
     /// Keep the first `P::USIZE` elements and drop the rest.
     ///
     /// ```
@@ -280,8 +385,8 @@ impl<T, S: ArrayLen> Array<T, S> {
     /// of the rest.
     ///
     /// The rest is a slice, because its size `S - P` cannot be expressed as a
-    /// type in generic code. If you need it as an [`Array`], cast to a
-    /// [`Sum`] with [`Array::cast_ref`] and [`Array::split_ref`] instead.
+    /// type in generic code. If you need it as an [`Array`], name its size and
+    /// use [`Array::split_ref_with`] instead.
     ///
     /// ```
     /// use const_array::{at_most, Array, Len};
@@ -472,6 +577,28 @@ impl<T, S: ArrayLen> Array<T, S> {
             ptr::write((&raw mut (*concat).1).cast(), other);
             out.assume_init()
         }
+    }
+
+    /// Concatenate `self` and `other` into an [`Array`] of size `S2`, which
+    /// has the same length as `S` and `B` together. This is the inverse of
+    /// [`Array::parts_with`].
+    ///
+    /// This is a shorthand for `self.concat(other).cast(proof)`:
+    ///
+    /// ```
+    /// use const_array::{same_len, Array, Len, Sum};
+    ///
+    /// let r = Array::from([1u8; 32]);
+    /// let s = Array::from([2u8; 32]);
+    /// let sig: Array<u8, Len<64>> = r.concat_with(s, same_len!(Sum<Len<32>, Len<32>>, Len<64>));
+    /// assert_eq!((sig[31], sig[32]), (1, 2));
+    /// ```
+    pub const fn concat_with<B: ArrayLen, S2: ArrayLen>(
+        self,
+        other: Array<T, B>,
+        proof: SameLen<Sum<S, B>, S2>,
+    ) -> Array<T, S2> {
+        self.concat(other).cast(proof)
     }
 
     /// Wrap a reference to the inner array type into an [`Array`].

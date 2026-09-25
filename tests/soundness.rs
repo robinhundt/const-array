@@ -251,6 +251,87 @@ fn cast_preserves_elements_and_storage() {
 }
 
 #[test]
+fn split_with_views_point_into_the_array() {
+    type S33 = Sum<Len<3>, Len<3>>;
+    let mut arr: Array<i32, Len<6>> = Array::from_fn(|i| i as i32);
+    let ptr = arr.as_slice().as_ptr();
+
+    let (a, b) = arr.split_ref_with(same_len!(Len<6>, S33));
+    assert_eq!(a.as_slice().as_ptr(), ptr);
+    assert_eq!(
+        (a.as_slice(), b.as_slice()),
+        (&[0, 1, 2][..], &[3, 4, 5][..])
+    );
+
+    let (a, b) = arr.split_mut_with(same_len!(Len<6>, S33));
+    a[0] = 10;
+    b[0] = 30;
+    assert_eq!(arr.as_slice(), &[10, 1, 2, 30, 4, 5]);
+    assert_eq!(arr.as_slice().as_ptr(), ptr);
+}
+
+#[test]
+fn parts_with_moves_ownership_without_extra_drops() {
+    let counter = Rc::new(Cell::new(0));
+    {
+        let arr: Array<Bomb, Len<6>> = bombs(&counter);
+        let (a, b) = arr.parts_with(same_len!(Len<6>, Sum<Len<4>, Len<2>>));
+        assert_eq!(counter.get(), 0, "splitting must not drop elements");
+        drop(a);
+        assert_eq!(counter.get(), 4);
+        drop(b);
+        assert_eq!(counter.get(), 6);
+    }
+    assert_eq!(counter.get(), 6);
+}
+
+#[test]
+fn concat_with_moves_ownership_without_extra_drops() {
+    let counter = Rc::new(Cell::new(0));
+    {
+        let a: Array<Bomb, Len<4>> = bombs(&counter);
+        let b: Array<Bomb, Len<2>> = bombs(&counter);
+        let arr = a.concat_with(b, same_len!(Sum<Len<4>, Len<2>>, Len<6>));
+        assert_eq!(counter.get(), 0, "concatenating must not drop elements");
+        drop(arr);
+        assert_eq!(counter.get(), 6);
+    }
+    assert_eq!(counter.get(), 6);
+}
+
+#[test]
+fn chunks_with_views_point_into_the_array() {
+    type P32 = Prod<Len<3>, Len<2>>;
+    let mut arr: Array<i32, Len<6>> = Array::from_fn(|i| i as i32);
+    let ptr = arr.as_slice().as_ptr();
+
+    let chunks = arr.as_chunks_with(same_len!(Len<6>, P32));
+    assert_eq!(chunks.as_slice().as_ptr().cast(), ptr);
+    assert_eq!(chunks[1].as_slice(), &[2, 3]);
+
+    let chunks = arr.as_chunks_mut_with(same_len!(Len<6>, P32));
+    chunks[2][1] = 50;
+    assert_eq!(arr[5], 50);
+    assert_eq!(arr.as_slice().as_ptr(), ptr);
+}
+
+#[test]
+fn chunks_with_roundtrip_without_extra_drops() {
+    let counter = Rc::new(Cell::new(0));
+    {
+        let arr: Array<Bomb, Len<6>> = bombs(&counter);
+        let chunks = arr.into_chunks_with(same_len!(Len<6>, Prod<Len<3>, Len<2>>));
+        assert_eq!(counter.get(), 0, "chunking must not drop elements");
+        let arr: Array<Bomb, Len<6>> =
+            Array::from_chunks_with(chunks, same_len!(Prod<Len<3>, Len<2>>, Len<6>));
+        assert_eq!(counter.get(), 0, "flattening must not drop elements");
+        drop(arr);
+        assert_eq!(counter.get(), 6);
+    }
+    assert_eq!(counter.get(), 6);
+}
+
+#[test]
 fn try_cast_failure_returns_array_without_drops() {
     let counter = Rc::new(Cell::new(0));
     {

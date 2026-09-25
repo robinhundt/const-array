@@ -3,7 +3,8 @@
 #![warn(clippy::undocumented_unsafe_blocks)]
 
 use core::{
-    array,
+    array, fmt,
+    hash::{Hash, Hasher},
     marker::PhantomData,
     mem,
     ops::{Deref, DerefMut},
@@ -26,6 +27,17 @@ pub unsafe trait ArrayType<T>: sealed::Sealed + Sized {
     ///
     /// The element at index `i` of the returned array is `f(offset + i)`.
     fn build<F: FnMut(usize) -> T>(f: F, offset: usize) -> Self;
+
+    #[doc(hidden)]
+    /// Clone the array.
+    ///
+    /// This method is a work-around so that we can have a `Clone`
+    /// implementation that only has a `T: Clone` bound and which
+    /// can make use of the std library specialization of Clone
+    /// for Copy types.
+    fn clone_array(&self) -> Self
+    where
+        T: Clone;
 }
 
 // SAFETY: Self is `[T; N]` and `Self::LEN = N` so it is trivially sound to
@@ -35,6 +47,13 @@ unsafe impl<T, const N: usize> ArrayType<T> for [T; N] {
 
     fn build<F: FnMut(usize) -> T>(mut f: F, offset: usize) -> Self {
         array::from_fn(|i| f(offset + i))
+    }
+
+    fn clone_array(&self) -> Self
+    where
+        T: Clone,
+    {
+        <[T; N] as Clone>::clone(self)
     }
 }
 
@@ -54,6 +73,13 @@ unsafe impl<T, A: ArrayType<T>, B: ArrayType<T>> ArrayType<T> for Concat<A, B> {
 
     fn build<F: FnMut(usize) -> T>(mut f: F, offset: usize) -> Self {
         Concat(A::build(&mut f, offset), B::build(&mut f, offset + A::LEN))
+    }
+
+    fn clone_array(&self) -> Self
+    where
+        T: Clone,
+    {
+        Concat(self.0.clone_array(), self.1.clone_array())
     }
 }
 
@@ -76,9 +102,39 @@ pub unsafe trait ArraySize: sealed::Sealed {
 }
 
 /// A simple [`ArraySize`] over a const generic `N`.
-pub struct U<const N: usize>;
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum U<const N: usize> {}
 /// The sum of two [`ArraySizes`][`ArraySize`].
 pub struct Sum<A, B>(PhantomData<(A, B)>);
+
+// The following traits are implemented manually for `Sum`, because deriving
+// them would add unnecessary bounds on `A` and `B`. They are needed so that
+// `#[derive]`s on user types that are generic over an `ArraySize` work.
+impl<A, B> Clone for Sum<A, B> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<A, B> Copy for Sum<A, B> {}
+
+impl<A, B> fmt::Debug for Sum<A, B> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Sum")
+    }
+}
+
+impl<A, B> PartialEq for Sum<A, B> {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+impl<A, B> Eq for Sum<A, B> {}
+
+impl<A, B> Hash for Sum<A, B> {
+    fn hash<H: Hasher>(&self, _state: &mut H) {}
+}
 
 // SAFETY: The LEN of the ArrayType and the USIZE are both `N`.
 unsafe impl<const N: usize> ArraySize for U<N> {
@@ -101,11 +157,33 @@ unsafe impl<A: ArraySize, B: ArraySize> ArraySize for Sum<A, B> {
 #[repr(transparent)]
 pub struct Array<T, S: ArraySize>(S::ArrayType<T>);
 
-impl<T: Clone, S: ArraySize<ArrayType<T>: Clone>> Clone for Array<T, S> {
+impl<T: Clone, S: ArraySize> Clone for Array<T, S> {
     fn clone(&self) -> Self {
-        Self(self.0.clone())
+        Self(self.0.clone_array())
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.as_mut_slice().clone_from_slice(source);
     }
 }
+
+/// [`Array`] is [`Copy`] for every concrete [`ArraySize`] if `T: Copy`.
+///
+/// In code that is generic over the size, the compiler cannot infer this.
+/// There, prefer [`Clone::clone`], which is just as fast: it delegates to the
+/// standard library's `Clone` for arrays, which is specialized to a plain copy
+/// for `Copy` types. If you need actual `Copy` semantics, add the bound
+/// `S: ArraySize<ArrayType<T>: Copy>`:
+///
+/// ```
+/// use const_array::{Array, ArraySize};
+///
+/// fn duplicate<T: Copy, S: ArraySize<ArrayType<T>: Copy>>(
+///     a: &Array<T, S>,
+/// ) -> (Array<T, S>, Array<T, S>) {
+///     (*a, *a)
+/// }
+/// ```
 impl<T: Copy, S: ArraySize<ArrayType<T>: Copy>> Copy for Array<T, S> {}
 
 impl<T, S: ArraySize> Array<T, S> {
@@ -249,11 +327,11 @@ impl<T, S: ArraySize> TryFrom<&mut [T]> for &mut Array<T, S> {
     }
 }
 
-impl<T: Copy, S: ArraySize<ArrayType<T>: Copy>> TryFrom<&[T]> for Array<T, S> {
+impl<T: Clone, S: ArraySize> TryFrom<&[T]> for Array<T, S> {
     type Error = TryFromSliceError;
 
     fn try_from(slice: &[T]) -> Result<Self, Self::Error> {
-        <&Self>::try_from(slice).copied()
+        <&Self>::try_from(slice).cloned()
     }
 }
 

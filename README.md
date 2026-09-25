@@ -112,6 +112,27 @@ Subtraction can't be expressed as a type in generic code, so the rest after
 a prefix is a slice. If it is needed as an `Array`, the caller names its
 size and bridges it with `same_len!`, e.g. from `Len<N>` to `Sum<P, R>`.
 
+**Parameter traits.** If the caller picks the sizes but no argument can carry
+a proof, e.g. in `Default::default()`, let the caller implement a trait that
+names the sizes and requires the proof as an associated `const`. The impl is
+concrete, so `cargo check` verifies the proof:
+
+```rust
+use const_array::{at_most, ArrayLen, AtMost, Len};
+
+trait ModeParams {
+    type NonceSize: ArrayLen;
+    const NONCE_NOT_EMPTY: AtMost<Len<1>, Self::NonceSize>;
+}
+
+struct Nonce96;
+
+impl ModeParams for Nonce96 {
+    type NonceSize = Len<12>;
+    const NONCE_NOT_EMPTY: AtMost<Len<1>, Self::NonceSize> = at_most!(Len<1>, Self::NonceSize);
+}
+```
+
 **Derives** work on types that are generic over a size: every `ArrayLen`
 implements `Copy`, `Debug`, `Default`, `Eq`, `Ord` and `Hash`, so
 `#[derive(Clone, Debug, Default, PartialEq)] struct Key<S: ArrayLen>`

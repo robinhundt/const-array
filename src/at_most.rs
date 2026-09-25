@@ -91,6 +91,9 @@ impl<A: ArrayLen, B: ArrayLen> AtMost<A, B> {
     ///
     /// let _ = first_16::<Len<8>>(&Array::default());
     /// ```
+    ///
+    /// The error points at the generic code, not at the code that chose the
+    /// sizes. See [`SameLen::checked`] for how to move it to `cargo check`.
     pub const fn checked() -> Self {
         const {
             assert!(

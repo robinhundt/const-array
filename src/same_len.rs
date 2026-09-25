@@ -92,6 +92,25 @@ impl<A: ArrayLen, B: ArrayLen> SameLen<A, B> {
     ///
     /// let _ = to_32::<Len<31>>(Array::default());
     /// ```
+    ///
+    /// The error points at the generic code, not at the code that chose the
+    /// sizes. A `const` item that uses the instantiation moves the check to
+    /// `cargo check`:
+    ///
+    /// ```compile_fail
+    /// use const_array::{ArrayLen, Len, SameLen, Sum};
+    ///
+    /// struct Wrapper<A, B>(A, B);
+    ///
+    /// impl<A: ArrayLen, B: ArrayLen> Wrapper<A, B> {
+    ///     const SPLIT: SameLen<A, Sum<B, Len<4>>> = SameLen::checked();
+    /// }
+    ///
+    /// // 16 != 8 + 4, reported by `cargo check`.
+    /// const _: () = {
+    ///     let _ = Wrapper::<Len<16>, Len<8>>::SPLIT;
+    /// };
+    /// ```
     pub const fn checked() -> Self {
         const {
             assert!(

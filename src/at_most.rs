@@ -128,7 +128,8 @@ impl<A: ArrayLen, B: ArrayLen> SameLen<A, B> {
 
 /// Create an [`AtMost`] proof for two concrete [`ArrayLens`][`ArrayLen`].
 ///
-/// Fails to compile if the first size is longer than the second:
+/// Fails to compile if the first size is longer than the second, already
+/// during `cargo check`:
 ///
 /// ```
 /// use const_array::{at_most, AtMost, Len, Sum};
@@ -142,18 +143,49 @@ impl<A: ArrayLen, B: ArrayLen> SameLen<A, B> {
 /// let proof = at_most!(Len<7>, Len<6>);
 /// ```
 ///
-/// Like [`same_len!`](crate::same_len!), the macro cannot be used with generic
-/// parameters of the surrounding function or with `Self`. Spell out the
-/// concrete type instead.
+/// Like [`same_len!`](crate::same_len!), the macro rejects generic parameters
+/// of the surrounding item during `cargo check`, and accepts `Self` and its
+/// associated types in an impl for a concrete type:
+///
+/// ```
+/// use const_array::{at_most, ArrayLen, AtMost, Len};
+///
+/// trait Digest {
+///     type OutputSize: ArrayLen;
+///     type BlockSize: ArrayLen;
+///     const OUTPUT_FITS_BLOCK: AtMost<Self::OutputSize, Self::BlockSize>;
+/// }
+///
+/// struct Sha256;
+///
+/// impl Digest for Sha256 {
+///     type OutputSize = Len<32>;
+///     type BlockSize = Len<64>;
+///     const OUTPUT_FITS_BLOCK: AtMost<Self::OutputSize, Self::BlockSize> =
+///         at_most!(Self::OutputSize, Self::BlockSize);
+/// }
+/// ```
+///
+/// ```compile_fail
+/// use const_array::{at_most, ArrayLen, AtMost, Len};
+///
+/// fn generic<S: ArrayLen>() -> AtMost<S, Len<64>> {
+///     at_most!(S, Len<64>)
+/// }
+/// ```
 #[macro_export]
 macro_rules! at_most {
-    ($a:ty, $b:ty $(,)?) => {{
-        const PROOF: $crate::AtMost<$a, $b> = match $crate::AtMost::<$a, $b>::try_new() {
-            ::core::option::Option::Some(proof) => proof,
-            ::core::option::Option::None => {
-                ::core::panic!("at_most!: the first size is longer than the second")
+    ($a:ty, $b:ty $(,)?) => {
+        // See `same_len!`. The array length underflows if the first size is
+        // longer, which names both lengths in the error.
+        const {
+            let _ = [(); <$b as $crate::ArrayLen>::USIZE - <$a as $crate::ArrayLen>::USIZE];
+            match $crate::AtMost::<$a, $b>::try_new() {
+                ::core::option::Option::Some(proof) => proof,
+                ::core::option::Option::None => {
+                    ::core::panic!("at_most!: the first size is longer than the second")
+                }
             }
-        };
-        PROOF
-    }};
+        }
+    };
 }

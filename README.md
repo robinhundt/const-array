@@ -75,11 +75,11 @@ fn split_signature(sig: &Array<u8, Len<64>>) -> (&Array<u8, Len<32>>, &Array<u8,
 
 When a generic algorithm is parameterized by a trait, state each flat size once
 per implementation and put its proof in an associated `const` of type
-`SameLen<Self::FlatSize, StructuredSize>`, created with `same_len!` and the
-concrete type name (`Self` can't be used inside the macro). A mismatch is then
-reported by `cargo check`. A default of `SameLen::checked()` in the trait saves
-writing one proof per implementation, but a mismatch is only reported by
-`cargo build`. Internally, pick the structure of each size to match how the
+`SameLen<Self::FlatSize, StructuredSize>`, created with
+`same_len!(Self::FlatSize, StructuredSize)`. In an impl for a concrete type,
+a mismatch is reported by `cargo check`. A default of `SameLen::checked()` in
+the trait saves writing one proof per implementation, but a mismatch is only
+reported by `cargo build`. Internally, pick the structure of each size to match how the
 values are built and split, so casts are only needed at the public boundary.
 
 **Generic constructions expose the `Sum` of their parts.** The key of an

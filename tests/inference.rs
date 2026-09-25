@@ -384,3 +384,40 @@ fn try_from_slice_error_is_an_error() {
     let boxed: Box<dyn std::error::Error> = Box::new(err);
     assert_eq!(boxed.to_string(), "could not convert slice to array");
 }
+
+/// The proof macros accept concrete sizes inside generic code, and `Self` in
+/// impls for concrete types, also inside methods.
+#[test]
+fn proof_macros_in_generic_code_and_impls() {
+    fn generic<T: Default>(a: Array<T, Len<6>>) -> (Array<T, Len<2>>, Array<T, Len<4>>) {
+        let _: AtMost<Len<2>, Len<6>> = at_most!(Len<2>, Len<6>);
+        a.cast(same_len!(Len<6>, Sum<Len<2>, Len<4>>)).parts()
+    }
+    let (x, y) = generic(Array::from([1, 2, 3, 4, 5, 6]));
+    assert_eq!((x[1], y[0]), (2, 3));
+
+    trait Block {
+        type Size: ArrayLen;
+        const HALVES: SameLen<Self::Size, Sum<Len<8>, Len<8>>>;
+        fn halves(block: &Array<u8, Self::Size>) -> (&Array<u8, Len<8>>, &Array<u8, Len<8>>);
+    }
+
+    struct Cipher;
+
+    impl Block for Cipher {
+        type Size = Len<16>;
+        const HALVES: SameLen<Self::Size, Sum<Len<8>, Len<8>>> =
+            same_len!(Self::Size, Sum<Len<8>, Len<8>>);
+        fn halves(block: &Array<u8, Self::Size>) -> (&Array<u8, Len<8>>, &Array<u8, Len<8>>) {
+            let _: AtMost<Len<8>, Self::Size> = at_most!(Len<8>, Self::Size);
+            block
+                .cast_ref(same_len!(Self::Size, Sum<Len<8>, Len<8>>))
+                .split_ref()
+        }
+    }
+
+    let block = Array::from_fn(|i| i as u8);
+    let (lo, hi) = Cipher::halves(&block);
+    assert_eq!((lo[0], hi[0]), (0, 8));
+    let _ = Cipher::HALVES;
+}

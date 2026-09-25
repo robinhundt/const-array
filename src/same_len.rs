@@ -139,7 +139,7 @@ impl<A: ArrayLen> SameLen<A, A> {
 
 /// Create a [`SameLen`] proof for two concrete [`ArrayLens`][`ArrayLen`].
 ///
-/// Fails to compile if the lengths differ:
+/// Fails to compile if the lengths differ, already during `cargo check`:
 ///
 /// ```
 /// use const_array::{same_len, SameLen, Len, Sum};
@@ -153,8 +153,11 @@ impl<A: ArrayLen> SameLen<A, A> {
 /// let proof = same_len!(Len<6>, Len<7>);
 /// ```
 ///
-/// The macro cannot be used with generic parameters of the surrounding
-/// function. Generic code should take a [`SameLen`] as a parameter instead:
+/// The sizes must be concrete, so that the check can run during `cargo check`.
+/// The macro therefore rejects generic parameters of the surrounding item,
+/// also during `cargo check`. Generic code should take a [`SameLen`] as a
+/// parameter instead, or use [`SameLen::checked`] where a mismatch is
+/// impossible:
 ///
 /// ```compile_fail
 /// use const_array::{same_len, ArrayLen, Len};
@@ -164,10 +167,10 @@ impl<A: ArrayLen> SameLen<A, A> {
 /// }
 /// ```
 ///
-/// For the same reason, `Self` cannot be used inside the macro. In a trait
-/// impl, spell out the concrete type. A common pattern is a flat public size
-/// with an associated `const` that proves it matches the structured size used
-/// internally, checked once per implementing type during `cargo check`:
+/// `Self` and its associated types can be used in an impl for a concrete type.
+/// A common pattern is a flat public size with an associated `const` that
+/// proves it matches the structured size used internally, checked once per
+/// implementing type during `cargo check`:
 ///
 /// ```
 /// use const_array::{same_len, ArrayLen, Len, Prod, SameLen, Sum};
@@ -184,16 +187,37 @@ impl<A: ArrayLen> SameLen<A, A> {
 /// impl Params for Small {
 ///     type K = Len<2>;
 ///     type KeySize = Len<800>;
-///     // `same_len!(Len<800>, Sum<Prod<Self::K, ..>, ..>)` would not compile.
-///     const KEY_PARTS: SameLen<Len<800>, Sum<Prod<Len<2>, Len<384>>, Len<32>>> =
-///         same_len!(Len<800>, Sum<Prod<Len<2>, Len<384>>, Len<32>>);
+///     const KEY_PARTS: SameLen<Self::KeySize, Sum<Prod<Self::K, Len<384>>, Len<32>>> =
+///         same_len!(Self::KeySize, Sum<Prod<Self::K, Len<384>>, Len<32>>);
+/// }
+/// ```
+///
+/// In an impl that is generic itself, `Self` is generic too, and the macro
+/// rejects it:
+///
+/// ```compile_fail
+/// use const_array::{same_len, ArrayLen, Len, SameLen};
+///
+/// trait Flat {
+///     type Size: ArrayLen;
+///     const IS_32: SameLen<Self::Size, Len<32>>;
+/// }
+///
+/// struct Wrapper<S>(S);
+///
+/// impl<S: ArrayLen> Flat for Wrapper<S> {
+///     type Size = S;
+///     const IS_32: SameLen<S, Len<32>> = same_len!(Self::Size, Len<32>);
 /// }
 /// ```
 #[macro_export]
 macro_rules! same_len {
-    ($a:ty, $b:ty $(,)?) => {{
-        const PROOF: $crate::SameLen<$a, $b> = {
-            // A type error that names both lengths if they differ.
+    ($a:ty, $b:ty $(,)?) => {
+        // An inline `const` (unlike a nested `const` item) can mention `Self`.
+        // Array lengths can't depend on generic parameters, so the array
+        // below rejects generic sizes during `cargo check`, and it is a type
+        // error that names both lengths if they differ.
+        const {
             let _: [(); <$a as $crate::ArrayLen>::USIZE] = [(); <$b as $crate::ArrayLen>::USIZE];
             match $crate::SameLen::<$a, $b>::try_new() {
                 ::core::option::Option::Some(proof) => proof,
@@ -201,7 +225,6 @@ macro_rules! same_len {
                     ::core::panic!("same_len!: the sizes have different lengths")
                 }
             }
-        };
-        PROOF
-    }};
+        }
+    };
 }

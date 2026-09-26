@@ -71,6 +71,7 @@ pub(crate) type Invariant<A, B> = PhantomData<fn(A, B) -> (A, B)>;
 // Manual impls, because deriving them would add unnecessary bounds on `A`
 // and `B`.
 impl<A, B> Clone for SameLen<A, B> {
+    #[inline]
     fn clone(&self) -> Self {
         *self
     }
@@ -92,6 +93,7 @@ impl<A: ArrayLen, B: ArrayLen> SameLen<A, B> {
     /// [`same_len!`](crate::same_len!) for concrete sizes, which turns a
     /// mismatch into a compile error.
     #[must_use]
+    #[inline]
     pub const fn try_new() -> Option<Self> {
         if A::USIZE == B::USIZE {
             // Invariant: Checked above.
@@ -153,6 +155,7 @@ impl<A: ArrayLen, B: ArrayLen> SameLen<A, B> {
     /// };
     /// ```
     #[must_use]
+    #[inline]
     pub const fn checked() -> Self {
         const {
             assert!(
@@ -181,6 +184,7 @@ impl<A: ArrayLen, B: ArrayLen> SameLen<A, B> {
     /// }
     /// ```
     #[must_use]
+    #[inline]
     pub const fn symm(self) -> SameLen<B, A> {
         // Invariant: Equality is symmetric.
         SameLen(PhantomData)
@@ -189,6 +193,7 @@ impl<A: ArrayLen, B: ArrayLen> SameLen<A, B> {
     /// If `A` has the same length as `B` and `B` the same length as `C`, then
     /// `A` has the same length as `C`.
     #[must_use]
+    #[inline]
     pub const fn trans<C: ArrayLen>(self, _other: SameLen<B, C>) -> SameLen<A, C> {
         // Invariant: Equality is transitive.
         SameLen(PhantomData)
@@ -199,6 +204,7 @@ impl<A: ArrayLen, B: ArrayLen> SameLen<A, B> {
     ///
     /// Use it with [`SameLen::refl`] to rearrange one part of a [`Sum`].
     #[must_use]
+    #[inline]
     pub const fn sum<C: ArrayLen, D: ArrayLen>(
         self,
         _other: SameLen<C, D>,
@@ -210,6 +216,7 @@ impl<A: ArrayLen, B: ArrayLen> SameLen<A, B> {
     /// If `A` has the same length as `B` and `C` the same length as `D`, then
     /// `Prod<A, C>` has the same length as `Prod<B, D>`.
     #[must_use]
+    #[inline]
     pub const fn prod<C: ArrayLen, D: ArrayLen>(
         self,
         _other: SameLen<C, D>,
@@ -225,6 +232,7 @@ impl<A: ArrayLen, B: ArrayLen> SameLen<Sum<A, B>, Sum<B, A>> {
     /// A cast with it does not swap the parts. It splits the same elements
     /// after the first `B::USIZE` instead of the first `A::USIZE`.
     #[must_use]
+    #[inline]
     pub const fn sum_comm() -> Self {
         // Invariant: Addition is commutative.
         SameLen(PhantomData)
@@ -236,6 +244,7 @@ impl<A: ArrayLen, B: ArrayLen, C: ArrayLen> SameLen<Sum<Sum<A, B>, C>, Sum<A, Su
     ///
     /// Use [`SameLen::symm`] for the other direction.
     #[must_use]
+    #[inline]
     pub const fn sum_assoc() -> Self {
         // Invariant: Addition is associative.
         SameLen(PhantomData)
@@ -245,6 +254,7 @@ impl<A: ArrayLen, B: ArrayLen, C: ArrayLen> SameLen<Sum<Sum<A, B>, C>, Sum<A, Su
 impl<A: ArrayLen> SameLen<Sum<Len<0>, A>, A> {
     /// Lemma: `0 + A` has the same length as `A`.
     #[must_use]
+    #[inline]
     pub const fn sum_zero_left() -> Self {
         // Invariant: 0 is the identity of addition.
         SameLen(PhantomData)
@@ -254,6 +264,7 @@ impl<A: ArrayLen> SameLen<Sum<Len<0>, A>, A> {
 impl<A: ArrayLen> SameLen<Sum<A, Len<0>>, A> {
     /// Lemma: `A + 0` has the same length as `A`.
     #[must_use]
+    #[inline]
     pub const fn sum_zero_right() -> Self {
         // Invariant: 0 is the identity of addition.
         SameLen(PhantomData)
@@ -266,6 +277,7 @@ impl<A: ArrayLen, B: ArrayLen> SameLen<Prod<A, B>, Prod<B, A>> {
     /// A cast with it does not transpose. It views the same elements as `B`
     /// chunks of `A` elements instead of `A` chunks of `B` elements.
     #[must_use]
+    #[inline]
     pub const fn prod_comm() -> Self {
         // Invariant: Multiplication is commutative.
         SameLen(PhantomData)
@@ -277,6 +289,7 @@ impl<A: ArrayLen, B: ArrayLen, C: ArrayLen> SameLen<Prod<Prod<A, B>, C>, Prod<A,
     ///
     /// Use [`SameLen::symm`] for the other direction.
     #[must_use]
+    #[inline]
     pub const fn prod_assoc() -> Self {
         // Invariant: Multiplication is associative.
         SameLen(PhantomData)
@@ -286,6 +299,7 @@ impl<A: ArrayLen, B: ArrayLen, C: ArrayLen> SameLen<Prod<Prod<A, B>, C>, Prod<A,
 impl<A: ArrayLen> SameLen<Prod<Len<1>, A>, A> {
     /// Lemma: `1 * A` has the same length as `A`.
     #[must_use]
+    #[inline]
     pub const fn prod_one_left() -> Self {
         // Invariant: 1 is the identity of multiplication.
         SameLen(PhantomData)
@@ -295,6 +309,7 @@ impl<A: ArrayLen> SameLen<Prod<Len<1>, A>, A> {
 impl<A: ArrayLen> SameLen<Prod<A, Len<1>>, A> {
     /// Lemma: `A * 1` has the same length as `A`.
     #[must_use]
+    #[inline]
     pub const fn prod_one_right() -> Self {
         // Invariant: 1 is the identity of multiplication.
         SameLen(PhantomData)
@@ -306,6 +321,7 @@ impl<A: ArrayLen, B: ArrayLen, C: ArrayLen>
 {
     /// Lemma: `A * (B + C)` has the same length as `A * B + A * C`.
     #[must_use]
+    #[inline]
     pub const fn distrib_left() -> Self {
         // Invariant: Multiplication distributes over addition.
         SameLen(PhantomData)
@@ -320,6 +336,7 @@ impl<A: ArrayLen, B: ArrayLen, C: ArrayLen>
     /// `A + B` chunks of `C` elements are `A` chunks followed by `B` chunks,
     /// e.g. to split a buffer of blocks into its first blocks and the rest.
     #[must_use]
+    #[inline]
     pub const fn distrib_right() -> Self {
         // Invariant: Multiplication distributes over addition.
         SameLen(PhantomData)
@@ -333,6 +350,7 @@ impl<A: ArrayLen> SameLen<A, A> {
     /// used, to pass a proof for sizes that are known to be the same type,
     /// e.g. through an associated type bound.
     #[must_use]
+    #[inline]
     pub const fn refl() -> Self {
         // Invariant: `A::USIZE == A::USIZE`.
         SameLen(PhantomData)

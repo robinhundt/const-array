@@ -37,6 +37,7 @@ pub unsafe trait ArrayType<T>: sealed::Sealed + Sized {
     /// implementation that only has a `T: Clone` bound. It clones the elements
     /// flat rather than by cloning the nested arrays, which moves every clone
     /// into place once more. For `Copy` types, this compiles to a plain copy.
+    #[inline]
     fn clone_array(&self) -> Self
     where
         T: Clone,
@@ -52,6 +53,7 @@ pub unsafe trait ArrayType<T>: sealed::Sealed + Sized {
 /// The array is built in place, like with `core::array::from_fn`. Building
 /// the nested array types by value instead copies every level, and the nested
 /// loops keep the optimizer from removing checks in `f`.
+#[inline]
 pub(crate) fn build<T, A: ArrayType<T>, F: FnMut(usize) -> T>(mut f: F) -> A {
     /// Drops the first `init` elements at `base` if `f` panics.
     struct Guard<T> {
@@ -60,6 +62,7 @@ pub(crate) fn build<T, A: ArrayType<T>, F: FnMut(usize) -> T>(mut f: F) -> A {
     }
 
     impl<T> Drop for Guard<T> {
+        #[inline]
         fn drop(&mut self) {
             // SAFETY: The first `init` elements were written and are owned by
             // the guard, as the array is never returned.
@@ -85,6 +88,7 @@ pub(crate) fn build<T, A: ArrayType<T>, F: FnMut(usize) -> T>(mut f: F) -> A {
 }
 
 /// View an [`ArrayType`] as a slice of its `A::LEN` elements.
+#[inline]
 pub(crate) const fn as_slice<T, A: ArrayType<T>>(a: &A) -> &[T] {
     // SAFETY: By `A`'s invariant, it is laid out as `[T; A::LEN]`. The slice
     // borrows from `a`.
@@ -92,6 +96,7 @@ pub(crate) const fn as_slice<T, A: ArrayType<T>>(a: &A) -> &[T] {
 }
 
 /// View an [`ArrayType`] as a mutable slice of its `A::LEN` elements.
+#[inline]
 pub(crate) const fn as_mut_slice<T, A: ArrayType<T>>(a: &mut A) -> &mut [T] {
     // SAFETY: By `A`'s invariant, it is laid out as `[T; A::LEN]`. The slice
     // mutably borrows from `a`.
@@ -104,6 +109,7 @@ unsafe impl<T, const N: usize> ArrayType<T> for [T; N] {
 
     // The standard library's `Clone`, which is specialized to a plain copy for
     // `Copy` types even without optimizations.
+    #[inline]
     fn clone_array(&self) -> Self
     where
         T: Clone,
@@ -139,6 +145,7 @@ pub struct Repeat<I, O>(O, PhantomData<I>);
 
 // Manual impls, because deriving them would add unnecessary bounds on `I`.
 impl<I, O: Clone> Clone for Repeat<I, O> {
+    #[inline]
     fn clone(&self) -> Self {
         Repeat(self.0.clone(), PhantomData)
     }
@@ -221,6 +228,7 @@ pub struct Prod<A, B>(PhantomData<(A, B)>);
 // requires them, so that `#[derive]`s on user types that are generic over an
 // `ArrayLen` work.
 impl<A, B> Clone for Sum<A, B> {
+    #[inline]
     fn clone(&self) -> Self {
         *self
     }
@@ -236,6 +244,7 @@ impl<A: Debug + Default, B: Debug + Default> Debug for Sum<A, B> {
 }
 
 impl<A, B> PartialEq for Sum<A, B> {
+    #[inline]
     fn eq(&self, _other: &Self) -> bool {
         true
     }
@@ -244,28 +253,33 @@ impl<A, B> PartialEq for Sum<A, B> {
 impl<A, B> Eq for Sum<A, B> {}
 
 impl<A, B> Hash for Sum<A, B> {
+    #[inline]
     fn hash<H: Hasher>(&self, _state: &mut H) {}
 }
 
 impl<A, B> Default for Sum<A, B> {
+    #[inline]
     fn default() -> Self {
         Sum(PhantomData)
     }
 }
 
 impl<A, B> PartialOrd for Sum<A, B> {
+    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl<A, B> Ord for Sum<A, B> {
+    #[inline]
     fn cmp(&self, _other: &Self) -> Ordering {
         Ordering::Equal
     }
 }
 
 impl<A, B> Clone for Prod<A, B> {
+    #[inline]
     fn clone(&self) -> Self {
         *self
     }
@@ -281,6 +295,7 @@ impl<A: Debug + Default, B: Debug + Default> Debug for Prod<A, B> {
 }
 
 impl<A, B> PartialEq for Prod<A, B> {
+    #[inline]
     fn eq(&self, _other: &Self) -> bool {
         true
     }
@@ -289,22 +304,26 @@ impl<A, B> PartialEq for Prod<A, B> {
 impl<A, B> Eq for Prod<A, B> {}
 
 impl<A, B> Hash for Prod<A, B> {
+    #[inline]
     fn hash<H: Hasher>(&self, _state: &mut H) {}
 }
 
 impl<A, B> Default for Prod<A, B> {
+    #[inline]
     fn default() -> Self {
         Prod(PhantomData)
     }
 }
 
 impl<A, B> PartialOrd for Prod<A, B> {
+    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl<A, B> Ord for Prod<A, B> {
+    #[inline]
     fn cmp(&self, _other: &Self) -> Ordering {
         Ordering::Equal
     }

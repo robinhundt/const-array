@@ -75,12 +75,12 @@ pub(crate) fn build<T, A: ArrayType<T>, F: FnMut(usize) -> T>(mut f: F) -> A {
         base: array.as_mut_ptr().cast::<T>(),
         init: 0,
     };
-    while guard.init < A::LEN {
-        let x = f(guard.init);
+    for i in 0..A::LEN {
+        let x = f(i);
         // SAFETY: By `A`'s invariant, it is laid out as `[T; A::LEN]`, so
-        // index `init < A::LEN` is in bounds.
-        unsafe { guard.base.add(guard.init).write(x) };
-        guard.init += 1;
+        // index `i < A::LEN` is in bounds.
+        unsafe { guard.base.add(i).write(x) };
+        guard.init = i + 1;
     }
     mem::forget(guard);
     // SAFETY: All `A::LEN` elements, i.e. all of `A`, are initialized.

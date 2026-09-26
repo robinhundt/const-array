@@ -32,6 +32,9 @@ use crate::{ArrayLen, Len, Prod, SameLen, Sum, same_len::Invariant};
 ///    fn tail<T, A: ArrayLen, B: ArrayLen>(a: &Array<T, Sum<A, B>>) -> &[T] {
 ///        a.split_prefix(AtMost::prefix_of_sum()).1
 ///    }
+///    # use const_array::Len;
+///    # let a = Array::<u8, Sum<Len<1>, Len<2>>>::from_fn(|i| i as u8);
+///    # assert_eq!(tail(&a), &[1, 2]);
 ///    ```
 /// 4. In generic code where `A` is at most as long as `B` for every
 ///    instantiation the caller can choose, but no lemma applies,
@@ -98,6 +101,8 @@ impl<A: ArrayLen, B: ArrayLen> AtMost<A, B> {
     /// fn first_block<T, B: ArrayLen>(a: &Array<T, Prod<Len<4>, B>>) -> &Array<T, B> {
     ///     a.prefix_ref(AtMost::checked())
     /// }
+    /// # let a = Array::<u8, Prod<Len<4>, Len<2>>>::from_fn(|i| i as u8);
+    /// # assert_eq!(first_block(&a).as_slice(), &[0, 1]);
     /// ```
     ///
     /// # Pitfall: not reported by `cargo check`

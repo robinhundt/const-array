@@ -48,6 +48,12 @@ use crate::{ArrayLen, Len, Prod, Sum};
 ///     let (first, rest) = blocks.split_ref();
 ///     (header, first, rest)
 /// }
+/// # type Buf = Sum<Len<1>, Prod<Sum<Len<1>, Len<1>>, Len<16>>>;
+/// # let buf = Array::<u8, Buf>::from_fn(|i| i as u8);
+/// # let (header, first, rest) = split_blocks(&buf);
+/// # assert_eq!(header.as_slice(), &buf[..1]);
+/// # assert_eq!(first.as_slice(), &buf[1..17]);
+/// # assert_eq!(rest.as_slice(), &buf[17..]);
 /// ```
 ///
 /// Like every cast, a lemma only changes how the elements are grouped, never
@@ -116,6 +122,8 @@ impl<A: ArrayLen, B: ArrayLen> SameLen<A, B> {
     /// fn stack<T, A: ArrayLen>(a: Array<T, Sum<A, A>>) -> Array<T, Prod<Len<2>, A>> {
     ///     a.cast(SameLen::checked())
     /// }
+    /// # let a = Array::<u8, Sum<Len<2>, Len<2>>>::from_fn(|i| i as u8);
+    /// # assert_eq!(stack(a).as_slice(), &[0, 1, 2, 3]);
     /// ```
     ///
     /// # Pitfall: not reported by `cargo check`
@@ -182,6 +190,9 @@ impl<A: ArrayLen, B: ArrayLen> SameLen<A, B> {
     ///     let (lo, hi) = a.cast(proof).parts();
     ///     hi.concat(lo).cast(proof.symm())
     /// }
+    /// # let a = Array::<u8, Len<64>>::from_fn(|i| i as u8);
+    /// # let swapped = swap_halves(a, const_array::same_len!(Len<64>, Sum<Len<32>, Len<32>>));
+    /// # assert_eq!((&swapped[..32], &swapped[32..]), (&a[32..], &a[..32]));
     /// ```
     #[must_use]
     #[inline]

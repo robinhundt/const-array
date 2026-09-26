@@ -205,6 +205,82 @@ jobs:
       - name: Check docs
         run: cargo doc --verbose --all-features --no-deps -Zunstable-options -Zrustdoc-scrape-examples
 
+  coverage:
+    name: Coverage
+    runs-on: "ubuntu-latest"
+    permissions:
+      # To post the summary as a comment on the pull request.
+      pull-requests: write
+    env:
+      # The compile_fail tests only run rustc on the files in tests/compile_fail,
+      # so they cover nothing.
+      CONST_ARRAY_SKIP_COMPILE_FAIL: 1
+      # Leave out the doctest sources (README.md) and the standard library.
+      IGNORE_FILENAME_REGEX: '(README\.md|/rustlib/.*)$'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Nightly, to also measure the doctests, which exercise much of the API.
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: nightly
+          components: "llvm-tools"
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
+        with:
+          tool: cargo-llvm-cov
+
+      - run: cargo llvm-cov --version
+
+      - name: Run tests, doctests and examples
+        run: |
+          cargo llvm-cov --no-report --no-fail-fast --doctests
+          for example in examples/*.rs; do
+            cargo llvm-cov run --no-report --example "$(basename "$example" .rs)"
+          done
+
+      - name: Report
+        run: |
+          cargo llvm-cov report --doctests --ignore-filename-regex "$IGNORE_FILENAME_REGEX" --html
+          cargo llvm-cov report --doctests --ignore-filename-regex "$IGNORE_FILENAME_REGEX" --lcov --output-path target/llvm-cov/lcov.info
+          {
+            echo '```'
+            cargo llvm-cov report --doctests --ignore-filename-regex "$IGNORE_FILENAME_REGEX" --summary-only
+            echo '```'
+          } > target/llvm-cov/summary.md
+          cat target/llvm-cov/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      # Pull requests from forks only get a read-only token, so they only have
+      # the job summary and the artifact.
+      - name: Comment on the pull request
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            echo '### Coverage'
+            echo
+            cat target/llvm-cov/summary.md
+            echo
+            echo "The HTML report is in the \`coverage\` artifact of [this run]($RUN_URL)."
+          } > target/llvm-cov/comment.md
+          # Updates the previous coverage comment instead of adding one per push.
+          gh pr comment "$PR" --edit-last --create-if-none --body-file target/llvm-cov/comment.md
+
+      - name: Upload report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage
+          path: |
+            target/llvm-cov/html
+            target/llvm-cov/lcov.info
+
   mutants:
     name: Mutants in the diff
     runs-on: "ubuntu-latest"
@@ -250,7 +326,7 @@ jobs:
   ci:
     name: CI
     if: always()
-    needs: [test, compile-fail, no-panic, msrv, miri, lint, docs, mutants]
+    needs: [test, compile-fail, no-panic, msrv, miri, lint, docs, coverage, mutants]
     runs-on: "ubuntu-latest"
     steps:
       - name: Check that all jobs succeeded

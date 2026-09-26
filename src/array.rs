@@ -51,6 +51,8 @@ impl<T: Clone, S: ArrayLen> Clone for Array<T, S> {
 /// ) -> (Array<T, S>, Array<T, S>) {
 ///     (*a, *a)
 /// }
+/// # let a = Array::<u8, const_array::Len<2>>::new([1, 2]);
+/// # assert_eq!(duplicate(&a), (a, a));
 /// ```
 impl<T: Copy, S: ArrayLen<ArrayType<T>: Copy>> Copy for Array<T, S> {}
 
@@ -558,6 +560,9 @@ impl<T, S: ArrayLen> Array<T, S> {
     /// fn pads<S: ArrayLen>(key: &Array<u8, S>) -> (Array<u8, S>, Array<u8, S>) {
     ///     (key.map_ref(|b| b ^ 0x36), key.map_ref(|b| b ^ 0x5c))
     /// }
+    /// # let key = Array::<u8, const_array::Len<2>>::new([0x00, 0xff]);
+    /// # let expected = (Array::new([0x36, 0xc9]), Array::new([0x5c, 0xa3]));
+    /// # assert_eq!(pads(&key), expected);
     /// ```
     #[inline]
     pub fn map_ref<U, F: FnMut(&T) -> U>(&self, mut f: F) -> Array<U, S> {

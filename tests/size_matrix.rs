@@ -11,6 +11,7 @@
 //! Run under miri to also catch undefined behavior on these paths.
 
 use std::{
+    borrow::{Borrow, BorrowMut},
     cell::Cell,
     fmt::Debug,
     hash::{DefaultHasher, Hash, Hasher},
@@ -21,7 +22,7 @@ use std::{
 use const_array::{Array, ArrayLen, AtMost, Len, Prod, SameLen, Sum};
 
 /// An element type that can be built from its index.
-trait Elem: Clone + PartialEq + Debug + Hash {
+trait Elem: Clone + Ord + Debug + Hash {
     fn make(i: usize) -> Self;
 }
 
@@ -43,7 +44,7 @@ impl Elem for String {
 
 /// Over-aligned, so its size is 64 bytes and misplaced elements are likely to
 /// be misaligned.
-#[derive(Clone, PartialEq, Debug, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 #[repr(align(64))]
 struct Aligned(u8);
 
@@ -67,7 +68,7 @@ fn live() -> usize {
 
 /// Counts how many values are alive, and panics on creation when the fuse
 /// runs out.
-#[derive(PartialEq, Debug, Hash)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 struct Tracked(usize);
 
 impl Tracked {
@@ -134,6 +135,8 @@ fn check_values<T: Elem, S: ArrayLen, F: ArrayLen>() {
     assert_eq!(a.as_ptr() as usize % align_of::<T>(), 0);
     assert_eq!(format!("{a:?}"), format!("{expected:?}"));
     assert_eq!(hash(&a), hash(&expected[..]));
+    assert_eq!(AsRef::<[T]>::as_ref(&a), &expected[..]);
+    assert_eq!(Borrow::<[T]>::borrow(&a), &expected[..]);
 
     // Clones and conversions.
     assert_eq!(a.clone(), a);
@@ -170,6 +173,11 @@ fn check_values<T: Elem, S: ArrayLen, F: ArrayLen>() {
     for x in m.each_mut() {
         *x = x.clone();
     }
+    assert_eq!(m.as_slice(), &reversed[..]);
+    assert_eq!(a.cmp(&m), expected.cmp(&reversed));
+    assert_eq!(a.partial_cmp(&m), expected.partial_cmp(&reversed));
+    AsMut::<[T]>::as_mut(&mut m).reverse();
+    BorrowMut::<[T]>::borrow_mut(&mut m).reverse();
     assert_eq!(m.as_slice(), &reversed[..]);
 
     // Casting to the flat size and back keeps the elements.

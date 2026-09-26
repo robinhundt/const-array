@@ -352,3 +352,16 @@ unsafe impl<A: ArrayLen, B: ArrayLen> ArrayLen for Prod<A, B> {
 
     type ArrayType<T> = Repeat<B::ArrayType<T>, A::ArrayType<B::ArrayType<T>>>;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // `Array::clone` clones the elements with `clone_array`, so `Repeat::clone`
+    // is only called directly.
+    #[test]
+    fn repeat_clone_clones_the_storage() {
+        let r: Repeat<[u8; 2], [[u8; 2]; 3]> = Repeat([[1, 2], [3, 4], [5, 6]], PhantomData);
+        assert_eq!(Clone::clone(&r).0, r.0);
+    }
+}

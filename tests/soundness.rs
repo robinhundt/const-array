@@ -321,6 +321,24 @@ fn into_iter_yields_all_elements_in_order() {
 }
 
 #[test]
+fn into_iter_as_mut_slice_writes_through() {
+    let arr: Array<String, S6> = Array::from_fn(|i| i.to_string());
+    let mut iter = arr.into_iter();
+    iter.next();
+    iter.next_back();
+    let alive = iter.as_mut_slice();
+    assert_eq!(alive, ["1", "2", "3", "4"]);
+    for s in alive {
+        s.push('!');
+    }
+    // Reading through a shared view after the mutable one must be sound.
+    assert_eq!(iter.as_slice(), ["1!", "2!", "3!", "4!"]);
+    assert_eq!(iter.next().as_deref(), Some("1!"));
+    assert_eq!(iter.next_back().as_deref(), Some("4!"));
+    assert_eq!(iter.as_mut_slice(), ["2!", "3!"]);
+}
+
+#[test]
 fn map_moves_every_element_once() {
     let counter = Rc::new(Cell::new(0));
     {

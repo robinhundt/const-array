@@ -23,10 +23,12 @@
           fx.stable.clippy
           fx.stable.rust-std
           fx.stable.rust-src
+          fx.stable.llvm-tools
           fx.complete.rustfmt
         ];
 
-        # Nightly toolchain for miri (this crate uses unsafe code)
+        # Nightly toolchain for miri (this crate uses unsafe code) and
+        # coverage of the doctests
         nightlyToolchain = fx.combine [
           fx.complete.rustc
           fx.complete.cargo
@@ -34,11 +36,12 @@
           fx.complete.rust-std
           fx.complete.rust-src
           fx.complete.miri
+          fx.complete.llvm-tools
           fx.complete.rustfmt
         ];
 
         mkDevShell = tc: pkgs.mkShell {
-          packages = [ tc pkgs.rust-analyzer pkgs.cargo-mutants ];
+          packages = [ tc pkgs.rust-analyzer pkgs.cargo-mutants pkgs.cargo-llvm-cov ];
 
           RUST_SRC_PATH = "${tc}/lib/rustlib/src/rust/library";
         };

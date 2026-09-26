@@ -59,6 +59,7 @@ impl<A: ArrayLen, B: ArrayLen> AtMost<A, B> {
     /// The check only involves constants and is optimized away. Prefer
     /// [`at_most!`](crate::at_most!) for concrete sizes, which turns a
     /// mismatch into a compile error.
+    #[must_use]
     pub const fn try_new() -> Option<Self> {
         if A::USIZE <= B::USIZE {
             // Invariant: Checked above.
@@ -102,6 +103,7 @@ impl<A: ArrayLen, B: ArrayLen> AtMost<A, B> {
     ///
     /// The error points at the generic code, not at the code that chose the
     /// sizes. See [`SameLen::checked`] for how to move it to `cargo check`.
+    #[must_use]
     pub const fn checked() -> Self {
         const {
             assert!(
@@ -115,6 +117,7 @@ impl<A: ArrayLen, B: ArrayLen> AtMost<A, B> {
 
     /// If `A` is at most as long as `B` and `B` at most as long as `C`, then
     /// `A` is at most as long as `C`.
+    #[must_use]
     pub const fn trans<C: ArrayLen>(self, _other: AtMost<B, C>) -> AtMost<A, C> {
         // Invariant: `A::USIZE <= B::USIZE <= C::USIZE`.
         AtMost(PhantomData)
@@ -123,6 +126,7 @@ impl<A: ArrayLen, B: ArrayLen> AtMost<A, B> {
 
 impl<A: ArrayLen> AtMost<A, A> {
     /// Every size is at most as long as itself.
+    #[must_use]
     pub const fn refl() -> Self {
         // Invariant: `A::USIZE <= A::USIZE`.
         AtMost(PhantomData)
@@ -131,6 +135,7 @@ impl<A: ArrayLen> AtMost<A, A> {
 
 impl<A: ArrayLen, B: ArrayLen> SameLen<A, B> {
     /// If `A` has the same length as `B`, it is at most as long as `B`.
+    #[must_use]
     pub const fn at_most(self) -> AtMost<A, B> {
         // Invariant: By `SameLen`'s invariant, `A::USIZE == B::USIZE`.
         AtMost(PhantomData)

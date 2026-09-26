@@ -49,6 +49,7 @@ impl<A: ArrayLen, B: ArrayLen> SameLen<A, B> {
     /// The check only involves constants and is optimized away. Prefer
     /// [`same_len!`](crate::same_len!) for concrete sizes, which turns a
     /// mismatch into a compile error.
+    #[must_use]
     pub const fn try_new() -> Option<Self> {
         if A::USIZE == B::USIZE {
             // Invariant: Checked above.
@@ -111,6 +112,7 @@ impl<A: ArrayLen, B: ArrayLen> SameLen<A, B> {
     ///     let _ = Wrapper::<Len<16>, Len<8>>::SPLIT;
     /// };
     /// ```
+    #[must_use]
     pub const fn checked() -> Self {
         const {
             assert!(
@@ -138,6 +140,7 @@ impl<A: ArrayLen, B: ArrayLen> SameLen<A, B> {
     ///     hi.concat(lo).cast(proof.symm())
     /// }
     /// ```
+    #[must_use]
     pub const fn symm(self) -> SameLen<B, A> {
         // Invariant: Equality is symmetric.
         SameLen(PhantomData)
@@ -150,6 +153,7 @@ impl<A: ArrayLen> SameLen<A, A> {
     /// Useful in generic code, where [`same_len!`](crate::same_len!) cannot be
     /// used, to pass a proof for sizes that are known to be the same type,
     /// e.g. through an associated type bound.
+    #[must_use]
     pub const fn refl() -> Self {
         // Invariant: `A::USIZE == A::USIZE`.
         SameLen(PhantomData)

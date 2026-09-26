@@ -397,15 +397,114 @@ impl<T, S: ArrayLen> Array<T, S> {
         Self::from_fn(|_| prefix.next().unwrap_or_else(|| fill.clone()))
     }
 
-    /// Apply `f` to each element, returning an array of the results.
-    pub fn map<U, F: FnMut(T) -> U>(self, mut f: F) -> Array<U, S> {
-        let mut iter = self.into_iter();
-        Array::from_fn(|_| match iter.next() {
-            Some(x) => f(x),
-            // `from_fn` calls the closure exactly `S::USIZE` times, which is the
-            // length of `iter`.
-            None => unreachable!("iterator has the length of the array"),
+    /// Construct a new array from a fallible function.
+    ///
+    /// The function is called with each index of the array in order, until it
+    /// returns the first error. The elements built so far are then dropped
+    /// and the error is returned.
+    ///
+    /// ```
+    /// use const_array::{Array, Len};
+    ///
+    /// let hex = b"00ff10";
+    /// let parse = |i: usize| {
+    ///     let digits = core::str::from_utf8(&hex[2 * i..2 * i + 2]).unwrap();
+    ///     u8::from_str_radix(digits, 16)
+    /// };
+    /// let bytes: Array<u8, Len<3>> = Array::try_from_fn(parse)?;
+    /// assert_eq!(bytes, [0x00, 0xff, 0x10]);
+    /// # Ok::<(), core::num::ParseIntError>(())
+    /// ```
+    pub fn try_from_fn<E, F: FnMut(usize) -> Result<T, E>>(mut f: F) -> Result<Self, E> {
+        // Build the elements as `Option`s, so that no unsafe code is needed to
+        // handle a partially built array.
+        let mut error = None;
+        let elements: Array<Option<T>, S> = Array::from_fn(|i| {
+            if error.is_some() {
+                return None;
+            }
+            f(i).map_err(|e| error = Some(e)).ok()
+        });
+        match error {
+            Some(e) => Err(e),
+            None => Ok(Self::from_exact_iter(elements.into_iter().flatten())),
+        }
+    }
+
+    /// Construct a new array from an iterator that yields exactly `S::USIZE`
+    /// elements.
+    ///
+    /// If it yields fewer or more elements, [`TryFromIterError`] is returned.
+    /// The iterator is advanced at most `S::USIZE + 1` times.
+    ///
+    /// ```
+    /// use const_array::{Array, Len};
+    ///
+    /// let squares: Array<u32, Len<4>> = Array::try_from_iter((0..4).map(|i| i * i)).unwrap();
+    /// assert_eq!(squares, [0, 1, 4, 9]);
+    /// assert!(Array::<u32, Len<4>>::try_from_iter(0..3).is_err());
+    /// assert!(Array::<u32, Len<4>>::try_from_iter(0..5).is_err());
+    /// ```
+    pub fn try_from_iter<I: IntoIterator<Item = T>>(iter: I) -> Result<Self, TryFromIterError> {
+        let mut iter = iter.into_iter();
+        let array = Self::try_from_fn(|_| iter.next().ok_or(TryFromIterError(())))?;
+        match iter.next() {
+            Some(_) => Err(TryFromIterError(())),
+            None => Ok(array),
+        }
+    }
+
+    /// Construct a new array from an iterator that yields at least `S::USIZE`
+    /// elements. Panics if it yields fewer.
+    fn from_exact_iter<I: Iterator<Item = T>>(mut iter: I) -> Self {
+        Self::from_fn(|_| match iter.next() {
+            Some(x) => x,
+            None => unreachable!("iterator is shorter than the array"),
         })
+    }
+
+    /// Apply `f` to each element, returning an array of the results.
+    pub fn map<U, F: FnMut(T) -> U>(self, f: F) -> Array<U, S> {
+        // `into_iter` has the length of the array, so this doesn't panic.
+        Array::from_exact_iter(self.into_iter().map(f))
+    }
+
+    /// Borrow each element, returning an array of references.
+    ///
+    /// ```
+    /// use const_array::{Array, Len};
+    ///
+    /// let names: Array<String, Len<2>> = Array::from(["a".to_owned(), "b".to_owned()]);
+    /// let lens: Array<usize, Len<2>> = names.each_ref().map(|s| s.len());
+    /// assert_eq!(lens, [1, 1]);
+    /// ```
+    pub fn each_ref(&self) -> Array<&T, S> {
+        // `iter` has the length of the array, so this doesn't panic.
+        Array::from_exact_iter(self.iter())
+    }
+
+    /// Mutably borrow each element, returning an array of mutable references.
+    pub fn each_mut(&mut self) -> Array<&mut T, S> {
+        // `iter_mut` has the length of the array, so this doesn't panic.
+        Array::from_exact_iter(self.iter_mut())
+    }
+
+    /// Combine two arrays of the same size into an array of pairs.
+    ///
+    /// Unlike `a.into_iter().zip(b)`, this cannot silently truncate the
+    /// result, as both arrays must have the same size.
+    ///
+    /// ```
+    /// use const_array::{Array, Len};
+    ///
+    /// let keys = Array::from(["a", "b"]);
+    /// let values = Array::from([1, 2]);
+    /// let pairs: Array<(&str, i32), Len<2>> = keys.zip(values);
+    /// assert_eq!(pairs, [("a", 1), ("b", 2)]);
+    /// ```
+    pub fn zip<U>(self, other: Array<U, S>) -> Array<(T, U), S> {
+        // Both iterators have the length of the array, so this doesn't panic.
+        Array::from_exact_iter(self.into_iter().zip(other))
     }
 
     /// Apply `f` to a reference to each element, returning an array of the
@@ -672,6 +771,19 @@ impl<T, const N: usize> Array<T, Len<N>> {
 /// Error when converting a slice into an [`Array`].
 #[derive(Debug, Copy, Clone)]
 pub struct TryFromSliceError(());
+
+/// Error when an iterator passed to [`Array::try_from_iter`] yields fewer or
+/// more elements than the array holds.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct TryFromIterError(());
+
+impl fmt::Display for TryFromIterError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("iterator length does not match the array length")
+    }
+}
+
+impl Error for TryFromIterError {}
 
 impl fmt::Display for TryFromSliceError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

@@ -531,6 +531,49 @@ fn at_most_lemmas_in_generic_code() {
 }
 
 #[test]
+fn each_ref_and_each_mut() {
+    let mut a: Array<String, S6> = Array::from_fn(|i| i.to_string());
+    let lens: Array<usize, S6> = a.each_ref().map(|s| s.len());
+    assert_eq!(lens.as_slice(), &[1; 6]);
+    for s in a.each_mut() {
+        s.push('!');
+    }
+    assert_eq!(a[5], "5!");
+}
+
+#[test]
+fn zip_pairs_elements() {
+    let a: Array<u8, S6> = Array::from_fn(|i| i as u8);
+    let b: Array<char, S6> = Array::from_fn(|i| (b'a' + i as u8) as char);
+    let pairs = a.zip(b);
+    assert_eq!(pairs[2], (2, 'c'));
+}
+
+#[test]
+fn try_from_fn_and_try_from_iter() {
+    let ok: Result<Array<u8, S6>, ()> = Array::try_from_fn(|i| Ok(i as u8));
+    assert_eq!(ok.unwrap().as_slice(), &[0, 1, 2, 3, 4, 5]);
+
+    let mut calls = 0;
+    let err: Result<Array<u8, S6>, usize> = Array::try_from_fn(|i| {
+        calls += 1;
+        if i == 2 { Err(i) } else { Ok(i as u8) }
+    });
+    assert_eq!(err, Err(2));
+    assert_eq!(calls, 3, "stops at the first error");
+
+    let a: Array<u8, S6> = Array::try_from_iter(0..6).unwrap();
+    assert_eq!(a.as_slice(), &[0, 1, 2, 3, 4, 5]);
+    assert!(Array::<u8, S6>::try_from_iter(0..5).is_err());
+    let err = Array::<u8, S6>::try_from_iter(0..7).unwrap_err();
+    let _: &dyn core::error::Error = &err;
+    assert_eq!(
+        err.to_string(),
+        "iterator length does not match the array length"
+    );
+}
+
+#[test]
 fn sizes_debug_print_their_structure() {
     assert_eq!(format!("{:?}", Len::<4>), "Len<4>");
     assert_eq!(

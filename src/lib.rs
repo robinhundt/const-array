@@ -9,7 +9,7 @@ mod iter;
 mod same_len;
 mod size;
 
-pub use array::{Array, TryFromSliceError};
+pub use array::{Array, TryFromIterError, TryFromSliceError};
 pub use at_most::{AtLeast, AtMost};
 pub use iter::IntoIter;
 pub use same_len::SameLen;

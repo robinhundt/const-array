@@ -90,10 +90,15 @@ pub(crate) fn try_build<T, E, A: ArrayType<T>, F: FnMut(usize) -> Result<T, E>>(
         init: 0,
     };
     for i in 0..A::LEN {
-        let x = f(i)?;
-        // SAFETY: By `A`'s invariant, it is laid out as `[T; A::LEN]`, so
-        // index `i < A::LEN` is in bounds.
-        unsafe { guard.base.add(i).write(x) };
+        // Not `f(i)?`, which leaves a dead store of each element to a
+        // temporary on the stack.
+        #[allow(clippy::question_mark)]
+        match f(i) {
+            // SAFETY: By `A`'s invariant, it is laid out as `[T; A::LEN]`, so
+            // index `i < A::LEN` is in bounds.
+            Ok(x) => unsafe { guard.base.add(i).write(x) },
+            Err(e) => return Err(e),
+        }
         guard.init = i + 1;
     }
     mem::forget(guard);

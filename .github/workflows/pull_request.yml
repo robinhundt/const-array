@@ -20,6 +20,10 @@ jobs:
     strategy:
       matrix:
         os: [ "ubuntu-latest", "windows-latest", "macos-latest" ]
+    env:
+      # The compile_fail snapshots depend on the exact rustc version, so they
+      # only run in the `compile-fail` job below.
+      CONST_ARRAY_SKIP_COMPILE_FAIL: 1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,6 +38,48 @@ jobs:
 
       - name: Run tests
         run: cargo test --verbose --no-fail-fast ${{ runner.os == 'macOS' && '-- --test-threads=1' || '' }}
+
+  compile-fail:
+    name: Compile-fail tests
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The expected errors in tests/compile_fail/*.stderr are rustc's exact
+      # output. Bump this version deliberately, together with the snapshots:
+      # `TRYBUILD=overwrite cargo test --test compile_fail`.
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: "1.98.1"
+
+      - run: cargo --version
+
+      - name: Run compile_fail tests
+        run: cargo test --test compile_fail
+
+  msrv:
+    name: MSRV
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Keep in sync with `rust-version` in Cargo.toml.
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: "1.85"
+
+      - run: cargo --version
+
+      # Only the library: dev-dependencies such as trybuild need a newer
+      # compiler, and users only build the library.
+      - name: Check library
+        run: cargo check --lib
 
   miri:
     name: Miri

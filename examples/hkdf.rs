@@ -1,4 +1,4 @@
-//! HKDF (RFC 5869), generic over any [`Digest`].
+//! HKDF (RFC 5869), generic over any `Digest`.
 //!
 //! Shows:
 //! - a construction generic over a digest, whose key sizes come from the

@@ -171,12 +171,14 @@ jobs:
         with:
           persist-credentials: false
 
+      # Nightly, to build the docs like docs.rs does (see
+      # `package.metadata.docs.rs` in Cargo.toml).
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
         with:
-          toolchain: stable
+          toolchain: nightly
 
       - run: cargo --version
 
       - name: Check docs
-        run: cargo doc --verbose --all-features --no-deps
+        run: cargo doc --verbose --all-features --no-deps -Zunstable-options -Zrustdoc-scrape-examples

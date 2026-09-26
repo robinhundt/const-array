@@ -22,3 +22,33 @@ include = [
 
 [dev-dependencies]
 trybuild = "1.0.121"
+
+# Scrape the examples for usages in the API docs, although they have
+# dev-dependencies.
+[[example]]
+name = "aead"
+doc-scrape-examples = true
+
+[[example]]
+name = "hkdf"
+doc-scrape-examples = true
+
+[[example]]
+name = "hybrid_kem"
+doc-scrape-examples = true
+
+[[example]]
+name = "lamport"
+doc-scrape-examples = true
+
+[[example]]
+name = "signature"
+doc-scrape-examples = true
+
+[[example]]
+name = "truncated"
+doc-scrape-examples = true
+
+[package.metadata.docs.rs]
+# Show usages from the examples in the API docs.
+cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]

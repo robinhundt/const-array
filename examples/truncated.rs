@@ -1,4 +1,4 @@
-//! Truncated digests (like SHA-512/256), usable wherever a [`Digest`] is.
+//! Truncated digests (like SHA-512/256), usable wherever a `Digest` is.
 //!
 //! Shows:
 //! - a trait requirement stated as an associated `const` proof instead of a

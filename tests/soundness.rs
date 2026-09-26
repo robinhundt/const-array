@@ -371,6 +371,29 @@ fn map_panic_drops_everything_once() {
 }
 
 #[test]
+fn try_from_fn_stops_at_the_first_error() {
+    let counter = Rc::new(Cell::new(0));
+    let mut calls = 0;
+    let result: Result<Array<Bomb, S6>, usize> = Array::try_from_fn(|i| {
+        calls += 1;
+        if i == 3 {
+            Err(i)
+        } else {
+            Ok(Bomb {
+                counter: Rc::clone(&counter),
+            })
+        }
+    });
+    assert_eq!(result.err(), Some(3));
+    assert_eq!(calls, 4, "no calls after the error");
+    assert_eq!(
+        counter.get(),
+        3,
+        "the elements built so far are dropped once"
+    );
+}
+
+#[test]
 fn into_array_moves_ownership_without_extra_drops() {
     let counter = Rc::new(Cell::new(0));
     {

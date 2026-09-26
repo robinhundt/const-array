@@ -438,7 +438,9 @@ impl<T, S: ArrayLen> Array<T, S> {
         T: Clone,
     {
         // By `AtMost`'s invariant, `P::USIZE <= S::USIZE`, so every element of
-        // `prefix` is used.
+        // `prefix` is used. `fill` is cloned for every remaining element rather
+        // than moved into the last one: with an iterator of the exact length,
+        // the optimizer can't remove the check that it yields enough elements.
         let mut prefix = prefix.into_iter();
         Self::from_fn(|_| prefix.next().unwrap_or_else(|| fill.clone()))
     }
@@ -462,23 +464,8 @@ impl<T, S: ArrayLen> Array<T, S> {
     /// # Ok::<(), core::num::ParseIntError>(())
     /// ```
     #[inline]
-    pub fn try_from_fn<E, F: FnMut(usize) -> Result<T, E>>(mut f: F) -> Result<Self, E> {
-        // Build the elements as `Option`s, so that no unsafe code is needed to
-        // handle a partially built array.
-        let mut error = None;
-        let elements: Array<Option<T>, S> = Array::from_fn(|i| {
-            if error.is_some() {
-                return None;
-            }
-            f(i).map_err(|e| error = Some(e)).ok()
-        });
-        match error {
-            Some(e) => Err(e),
-            // SAFETY: `f` never returned an error, so every element is `Some`.
-            // The optimizer can't prove this, so `unwrap` would leave a panic
-            // path.
-            None => Ok(elements.map(|x| unsafe { x.unwrap_unchecked() })),
-        }
+    pub fn try_from_fn<E, F: FnMut(usize) -> Result<T, E>>(f: F) -> Result<Self, E> {
+        size::try_build(f).map(Array)
     }
 
     /// Construct a new array from an iterator that yields exactly `S::USIZE`

@@ -32,7 +32,7 @@
 
 use std::hint::black_box;
 
-use const_array::{Array, AtMost, Len, Prod, Sum, at_most};
+use const_array::{Array, ArrayLen, AtMost, Len, Prod, SameLen, Sum, at_most, same_len};
 use no_panic::no_panic;
 
 /// Define `#[no_panic]` wrappers for the methods available for every size.
@@ -48,6 +48,9 @@ macro_rules! check_size {
             type S = $s;
             type P = $p;
             const PROOF: AtMost<P, S> = at_most!(P, S);
+            /// A flat size of the same length as `S`.
+            type Flat = Len<{ <S as ArrayLen>::USIZE }>;
+            const FLAT: SameLen<S, Flat> = same_len!(S, Flat);
 
             #[no_panic]
             #[inline(never)]
@@ -123,6 +126,42 @@ macro_rules! check_size {
 
             #[no_panic]
             #[inline(never)]
+            pub fn prefix_mut(a: &mut Array<u32, S>) -> &mut Array<u32, P> {
+                a.prefix_mut(PROOF)
+            }
+
+            #[no_panic]
+            #[inline(never)]
+            pub fn suffix_mut(a: &mut Array<u32, S>) -> &mut Array<u32, P> {
+                a.suffix_mut(PROOF)
+            }
+
+            #[no_panic]
+            #[inline(never)]
+            pub fn cast_ref(a: &Array<u32, S>) -> &Array<u32, Flat> {
+                a.cast_ref(FLAT)
+            }
+
+            #[no_panic]
+            #[inline(never)]
+            pub fn cast_mut(a: &mut Array<u32, S>) -> &mut Array<u32, Flat> {
+                a.cast_mut(FLAT)
+            }
+
+            #[no_panic]
+            #[inline(never)]
+            pub fn from_ref(a: &[u32; <S as ArrayLen>::USIZE]) -> &Array<u32, Flat> {
+                Array::from_ref(a)
+            }
+
+            #[no_panic]
+            #[inline(never)]
+            pub fn from_mut(a: &mut [u32; <S as ArrayLen>::USIZE]) -> &mut Array<u32, Flat> {
+                Array::from_mut(a)
+            }
+
+            #[no_panic]
+            #[inline(never)]
             pub fn split_suffix_mut(a: &mut Array<u32, S>) -> (&mut [u32], &mut Array<u32, P>) {
                 a.split_suffix_mut(PROOF)
             }
@@ -171,6 +210,12 @@ macro_rules! check_size {
 
             #[no_panic]
             #[inline(never)]
+            pub fn slice_as_chunks_mut(v: &mut [u32]) -> (&mut [Array<u32, S>], &mut [u32]) {
+                Array::slice_as_chunks_mut(v)
+            }
+
+            #[no_panic]
+            #[inline(never)]
             pub fn concat(a: Array<u32, S>, b: Array<u32, P>) -> Array<u32, Sum<S, P>> {
                 a.concat(b)
             }
@@ -190,6 +235,12 @@ macro_rules! check_size {
                 black_box(split_prefix_mut(&mut b));
                 black_box(suffix_ref(&a));
                 black_box(split_suffix_mut(&mut b));
+                black_box(prefix_mut(&mut b));
+                black_box(suffix_mut(&mut b));
+                black_box(cast_ref(&a));
+                black_box(cast_mut(&mut b));
+                black_box(from_ref(cast_ref(&a).as_array()));
+                black_box(from_mut(cast_mut(&mut b).as_mut_array()));
                 black_box(map(a.clone()));
                 black_box(zip(a.clone(), Array::from_fn(|i| i as u8)));
                 black_box(pad_from(Array::from_fn(|i| i as u32)));
@@ -197,6 +248,7 @@ macro_rules! check_size {
                 black_box(try_from_iter(&a).unwrap());
                 black_box(try_from_slice(&a).unwrap());
                 black_box(slice_as_chunks(&a));
+                black_box(slice_as_chunks_mut(&mut b));
                 black_box(concat(a.clone(), Array::default()));
             }
         }
@@ -211,3 +263,73 @@ check_size!(len_1024, Len<1024>, Len<1000>);
 check_size!(sum, Sum<Len<5>, Sum<Len<3>, Len<25>>>, Len<7>);
 check_size!(prod, Prod<Len<16>, Len<4>>, Sum<Len<3>, Len<8>>);
 check_size!(prod_large, Prod<Len<3>, Prod<Len<16>, Len<64>>>, Len<1000>);
+
+/// Define `#[no_panic]` wrappers for the methods of [`Sum`] sizes.
+macro_rules! check_sum {
+    ($name:ident, $a:ty, $b:ty) => {
+        mod $name {
+            use super::*;
+
+            type A = $a;
+            type B = $b;
+
+            #[no_panic]
+            #[inline(never)]
+            pub fn split_ref(a: &Array<u32, Sum<A, B>>) -> (&Array<u32, A>, &Array<u32, B>) {
+                a.split_ref()
+            }
+
+            #[no_panic]
+            #[inline(never)]
+            pub fn split_mut(
+                a: &mut Array<u32, Sum<A, B>>,
+            ) -> (&mut Array<u32, A>, &mut Array<u32, B>) {
+                a.split_mut()
+            }
+
+            #[test]
+            fn no_panic() {
+                let mut a = black_box(Array::from_fn(|i| i as u32));
+                black_box(split_ref(&a));
+                black_box(split_mut(&mut a));
+            }
+        }
+    };
+}
+
+check_sum!(sum_flat, Len<5>, Len<27>);
+check_sum!(sum_nested, Sum<Len<3>, Len<25>>, Prod<Len<16>, Len<4>>);
+
+/// Define `#[no_panic]` wrappers for the methods of [`Prod`] sizes.
+macro_rules! check_prod {
+    ($name:ident, $a:ty, $b:ty) => {
+        mod $name {
+            use super::*;
+
+            type A = $a;
+            type B = $b;
+
+            #[no_panic]
+            #[inline(never)]
+            pub fn as_chunks(a: &Array<u32, Prod<A, B>>) -> &Array<Array<u32, B>, A> {
+                a.as_chunks()
+            }
+
+            #[no_panic]
+            #[inline(never)]
+            pub fn as_chunks_mut(a: &mut Array<u32, Prod<A, B>>) -> &mut Array<Array<u32, B>, A> {
+                a.as_chunks_mut()
+            }
+
+            #[test]
+            fn no_panic() {
+                let mut a = black_box(Array::from_fn(|i| i as u32));
+                black_box(as_chunks(&a));
+                black_box(as_chunks_mut(&mut a));
+            }
+        }
+    };
+}
+
+check_prod!(prod_flat, Len<16>, Len<4>);
+check_prod!(prod_nested, Len<3>, Prod<Len<16>, Len<64>>);

@@ -54,6 +54,7 @@ pub struct IntoIter<T, S: ArrayLen> {
 
 impl<T, S: ArrayLen> IntoIter<T, S> {
     /// The elements that have not been yielded yet.
+    #[must_use]
     #[inline]
     pub fn as_slice(&self) -> &[T] {
         let alive = &self.data[self.alive.clone()];
@@ -64,6 +65,7 @@ impl<T, S: ArrayLen> IntoIter<T, S> {
     }
 
     /// The elements that have not been yielded yet, as a mutable slice.
+    #[must_use]
     #[inline]
     pub fn as_mut_slice(&mut self) -> &mut [T] {
         let alive = &mut self.data[self.alive.clone()];

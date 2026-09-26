@@ -2,6 +2,7 @@
 
 use core::{
     cmp::Ordering,
+    convert::Infallible,
     fmt::{self, Debug},
     hash::{Hash, Hasher},
     marker::PhantomData,
@@ -55,7 +56,20 @@ pub unsafe trait ArrayType<T>: sealed::Sealed + Sized {
 /// loops keep the optimizer from removing checks in `f`.
 #[inline]
 pub(crate) fn build<T, A: ArrayType<T>, F: FnMut(usize) -> T>(mut f: F) -> A {
-    /// Drops the first `init` elements at `base` if `f` panics.
+    match try_build(|i| Ok::<T, Infallible>(f(i))) {
+        Ok(array) => array,
+        Err(never) => match never {},
+    }
+}
+
+/// Fallible version of [`build`]. It stops at the first error of `f`, drops
+/// the elements built so far and returns the error.
+#[inline]
+pub(crate) fn try_build<T, E, A: ArrayType<T>, F: FnMut(usize) -> Result<T, E>>(
+    mut f: F,
+) -> Result<A, E> {
+    /// Drops the first `init` elements at `base` if `f` panics or returns an
+    /// error.
     struct Guard<T> {
         base: *mut T,
         init: usize,
@@ -76,15 +90,20 @@ pub(crate) fn build<T, A: ArrayType<T>, F: FnMut(usize) -> T>(mut f: F) -> A {
         init: 0,
     };
     for i in 0..A::LEN {
-        let x = f(i);
-        // SAFETY: By `A`'s invariant, it is laid out as `[T; A::LEN]`, so
-        // index `i < A::LEN` is in bounds.
-        unsafe { guard.base.add(i).write(x) };
+        // Not `f(i)?`, which leaves a dead store of each element to a
+        // temporary on the stack.
+        #[allow(clippy::question_mark)]
+        match f(i) {
+            // SAFETY: By `A`'s invariant, it is laid out as `[T; A::LEN]`, so
+            // index `i < A::LEN` is in bounds.
+            Ok(x) => unsafe { guard.base.add(i).write(x) },
+            Err(e) => return Err(e),
+        }
         guard.init = i + 1;
     }
     mem::forget(guard);
     // SAFETY: All `A::LEN` elements, i.e. all of `A`, are initialized.
-    unsafe { array.assume_init() }
+    Ok(unsafe { array.assume_init() })
 }
 
 /// View an [`ArrayType`] as a slice of its `A::LEN` elements.
@@ -211,11 +230,13 @@ impl<const N: usize> Debug for Len<N> {
         write!(f, "Len<{N}>")
     }
 }
+
 /// An `A` followed by a `B`.
 ///
 /// An [`Array`](crate::Array) of this size can be split into its parts with
 /// [`Array::split_ref`](crate::Array::split_ref) and friends.
 pub struct Sum<A, B>(PhantomData<(A, B)>);
+
 /// `A` chunks of `B` elements.
 ///
 /// An [`Array`](crate::Array) of this size can be viewed as an array of chunks

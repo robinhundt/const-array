@@ -68,8 +68,8 @@ fn try_from_slice_ref_infers() {
 
 #[test]
 fn try_from_slice_owned_copy() {
-    // The owned `TryFrom` exists for `Copy` element types and any size whose
-    // `ArrayType` is `Copy` -- including `Sum` sizes (`Concat: Copy`).
+    // The owned `TryFrom` clones the elements, so it exists for any size,
+    // including `Sum` sizes.
     let data = [1u8, 2, 3, 4];
     let arr: Array<u8, Sum<Len<1>, Len<3>>> = data[..].try_into().unwrap();
     assert_eq!(&*arr, &[1, 2, 3, 4]);
@@ -389,11 +389,29 @@ fn compare_with_plain_arrays() {
 }
 
 #[test]
+fn compare_arrays_of_different_element_types() {
+    // Like for plain arrays, the element types only need to be comparable.
+    let owned: Array<String, S6> = Array::from_fn(|i| i.to_string());
+    let borrowed: Array<&str, S6> = Array::from_fn(|i| ["0", "1", "2", "3", "4", "5"][i]);
+    assert!(owned == borrowed);
+    // The other side is still inferred when it is not annotated.
+    let a: Array<u8, S7> = Array::from_fn(|i| i as u8);
+    assert_eq!(a, Array::from_fn(|i| i as u8));
+    assert_ne!(a, Array::default());
+}
+
+#[test]
 fn try_from_slice_error_is_an_error() {
     let err = <&Array<u8, S3>>::try_from(&[1u8, 2][..]).unwrap_err();
     assert_eq!(err.to_string(), "could not convert slice to array");
     let boxed: Box<dyn std::error::Error> = Box::new(err);
     assert_eq!(boxed.to_string(), "could not convert slice to array");
+    // Both error types can be compared, e.g. in `assert_eq!`.
+    assert_eq!(err, <&Array<u8, S3>>::try_from(&[][..]).unwrap_err());
+    assert_eq!(
+        Array::<u8, S3>::try_from_iter(0..2).unwrap_err(),
+        Array::<u8, S3>::try_from_iter(0..4).unwrap_err(),
+    );
 }
 
 /// The proof macros accept concrete sizes inside generic code, and `Self` in

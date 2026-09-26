@@ -44,6 +44,14 @@ use crate::{ArrayLen, Len, Prod, SameLen, Sum, same_len::Invariant};
 // code relies on this, so every constructor must ensure it. As for `SameLen`,
 // the lemmas only need to hold for lengths that don't overflow `usize`, and the
 // proof is invariant in `A` and `B`.
+//
+// Unlike the `SameLen` lemmas, which also hold for wrapping arithmetic, the
+// `AtMost` lemmas `prefix_of_sum`, `suffix_of_sum`, `sum` and `prod` are false
+// if a length wraps: `Sum<Len<MAX>, Len<1>>` would have length 0, and
+// `prefix_of_sum` would claim `MAX <= 0`. Their soundness thus relies on the
+// overflowing length being a compile error, which the `compile_fail` example of
+// `prefix_of_sum` checks. Constant evaluation always checks for overflow, also
+// in release builds without `overflow-checks`.
 pub struct AtMost<A, B>(Invariant<A, B>);
 
 /// Proof that the [`ArrayLen`] `A` is at least as long as the [`ArrayLen`]
@@ -197,6 +205,16 @@ impl<A: ArrayLen, B: ArrayLen> AtMost<A, Sum<A, B>> {
     /// E.g. to take the first part of a [`Sum`] with
     /// [`Array::split_prefix`](crate::Array::split_prefix), which also returns
     /// the rest as a slice.
+    ///
+    /// A size whose length overflows `usize` fails to compile when it is
+    /// used, so the lemma can't be applied to lengths that wrap around:
+    ///
+    /// ```compile_fail,E0080
+    /// use const_array::{Array, AtMost, Len, Sum};
+    ///
+    /// let a: Array<(), Sum<Len<{ usize::MAX }>, Len<1>>> = Array::from_fn(|_| ());
+    /// let _ = a.truncate(AtMost::prefix_of_sum());
+    /// ```
     #[must_use]
     #[inline]
     pub const fn prefix_of_sum() -> Self {

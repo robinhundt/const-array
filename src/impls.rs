@@ -110,9 +110,9 @@ impl<T: fmt::Debug, S: ArrayLen> fmt::Debug for Array<T, S> {
     }
 }
 
-impl<T: PartialEq, S: ArrayLen> PartialEq for Array<T, S> {
+impl<T: PartialEq<U>, U, S: ArrayLen> PartialEq<Array<U, S>> for Array<T, S> {
     #[inline]
-    fn eq(&self, other: &Self) -> bool {
+    fn eq(&self, other: &Array<U, S>) -> bool {
         self.as_slice() == other.as_slice()
     }
 }

@@ -120,8 +120,8 @@ fn try_from_mut_slice_writes_through() {
     assert!(wrong.is_err());
 }
 
-// The owned `TryFrom<&[T]>` requires `S::ArrayType<T>: Copy`; since `Concat`
-// is `Copy`, it works for `Sum` sizes too.
+// The owned `TryFrom<&[T]>` clones the elements, so it only requires
+// `T: Clone`, and works for `Sum` sizes too.
 #[test]
 fn try_from_owned_copy_roundtrips() {
     let data = [10u8, 20, 30, 40, 50];
@@ -129,8 +129,8 @@ fn try_from_owned_copy_roundtrips() {
     assert_eq!(arr.as_slice(), &data);
 }
 
-// `Clone`/`Copy` on `Array` require `S::ArrayType<T>: Clone`/`Copy`; since
-// `Concat` is `Clone`, `Sum` sizes are cloneable too.
+// `Clone` on `Array` only requires `T: Clone`, so `Sum` sizes are cloneable
+// too.
 #[test]
 #[allow(clippy::clone_on_copy)]
 fn clone_is_a_deep_independent_copy() {
@@ -142,8 +142,8 @@ fn clone_is_a_deep_independent_copy() {
     assert_eq!(b.as_slice(), &[100, 1, 2, 3]);
 }
 
-// A `Sum`-sized array is now `Copy` (via `Concat: Copy`): passing it by value
-// leaves the source usable, and the copy is an independent duplicate.
+// A `Sum`-sized array of `Copy` elements is `Copy`, as `Concat` is: passing it
+// by value leaves the source usable, and the copy is an independent duplicate.
 #[test]
 fn sum_sized_array_is_copy() {
     let a: Array<i32, Sum<Len<2>, Len<2>>> = Array::from_fn(|i| i as i32);
@@ -368,6 +368,29 @@ fn map_panic_drops_everything_once() {
     }));
     assert!(result.is_err());
     assert_eq!(counter.get(), 6, "no leaks and no double drops on panic");
+}
+
+#[test]
+fn try_from_fn_stops_at_the_first_error() {
+    let counter = Rc::new(Cell::new(0));
+    let mut calls = 0;
+    let result: Result<Array<Bomb, S6>, usize> = Array::try_from_fn(|i| {
+        calls += 1;
+        if i == 3 {
+            Err(i)
+        } else {
+            Ok(Bomb {
+                counter: Rc::clone(&counter),
+            })
+        }
+    });
+    assert_eq!(result.err(), Some(3));
+    assert_eq!(calls, 4, "no calls after the error");
+    assert_eq!(
+        counter.get(),
+        3,
+        "the elements built so far are dropped once"
+    );
 }
 
 #[test]

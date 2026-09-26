@@ -92,6 +92,7 @@ impl<T, S: ArrayLen> Array<T, S> {
     pub const LEN: usize = S::USIZE;
 
     /// View the [`Array`] as a slice.
+    #[must_use]
     #[inline]
     pub const fn as_slice(&self) -> &[T] {
         const { Self::LAYOUT_OK };
@@ -99,6 +100,7 @@ impl<T, S: ArrayLen> Array<T, S> {
     }
 
     /// View the [`Array`] as a mutable slice.
+    #[must_use]
     #[inline]
     pub const fn as_mut_slice(&mut self) -> &mut [T] {
         const { Self::LAYOUT_OK };
@@ -180,6 +182,7 @@ impl<T, S: ArrayLen> Array<T, S> {
     ///
     /// let _ = Array::<u8, Len<0>>::slice_as_chunks(&[1, 2, 3]);
     /// ```
+    #[must_use]
     #[inline]
     pub const fn slice_as_chunks(slice: &[T]) -> (&[Self], &[T]) {
         const { assert!(S::USIZE != 0, "Array::slice_as_chunks: the chunk size is 0") };
@@ -189,6 +192,7 @@ impl<T, S: ArrayLen> Array<T, S> {
     }
 
     /// Mutable version of [`Array::slice_as_chunks`].
+    #[must_use]
     #[inline]
     pub const fn slice_as_chunks_mut(slice: &mut [T]) -> (&mut [Self], &mut [T]) {
         const {
@@ -205,6 +209,7 @@ impl<T, S: ArrayLen> Array<T, S> {
     /// Construct a new array from a function.
     ///
     /// The function is called with each index of the array in order.
+    #[must_use]
     #[inline]
     pub fn from_fn<F: FnMut(usize) -> T>(f: F) -> Array<T, S> {
         Array(size::build(f))
@@ -224,6 +229,7 @@ impl<T, S: ArrayLen> Array<T, S> {
     /// assert_eq!(enc_key[0], 0);
     /// assert_eq!(mac_key[0], 16);
     /// ```
+    #[must_use]
     #[inline]
     pub const fn cast<S2: ArrayLen>(self, _proof: SameLen<S, S2>) -> Array<T, S2> {
         const { Self::LAYOUT_OK };
@@ -236,6 +242,7 @@ impl<T, S: ArrayLen> Array<T, S> {
 
     /// Reinterpret a reference to the [`Array`] as a reference to an array of
     /// size `S2` with the same length.
+    #[must_use]
     #[inline]
     pub const fn cast_ref<S2: ArrayLen>(&self, _proof: SameLen<S, S2>) -> &Array<T, S2> {
         // By `SameLen`'s invariant, `S::USIZE == S2::USIZE`, so this doesn't
@@ -245,6 +252,7 @@ impl<T, S: ArrayLen> Array<T, S> {
 
     /// Reinterpret a mutable reference to the [`Array`] as a mutable reference
     /// to an array of size `S2` with the same length.
+    #[must_use]
     #[inline]
     pub const fn cast_mut<S2: ArrayLen>(&mut self, _proof: SameLen<S, S2>) -> &mut Array<T, S2> {
         // By `SameLen`'s invariant, `S::USIZE == S2::USIZE`, so this doesn't
@@ -276,6 +284,7 @@ impl<T, S: ArrayLen> Array<T, S> {
     /// `cargo check`, only by `cargo build`. See [`SameLen::checked`] for when
     /// to use it, and use [`Array::cast_ref`] or [`Array::cast_mut`] with
     /// [`SameLen::checked`] for references.
+    #[must_use]
     #[inline]
     pub const fn cast_checked<S2: ArrayLen>(self) -> Array<T, S2> {
         self.cast(SameLen::checked())
@@ -291,6 +300,7 @@ impl<T, S: ArrayLen> Array<T, S> {
     /// let short: Array<u8, Len<16>> = tag.truncate(at_most!(Len<16>, Len<32>));
     /// assert_eq!(short[15], 15);
     /// ```
+    #[must_use]
     #[inline]
     pub fn truncate<P: ArrayLen>(self, _proof: AtMost<P, S>) -> Array<T, P> {
         const { Self::LAYOUT_OK };
@@ -309,12 +319,14 @@ impl<T, S: ArrayLen> Array<T, S> {
     }
 
     /// View the first `P::USIZE` elements as an [`Array`].
+    #[must_use]
     #[inline]
     pub const fn prefix_ref<P: ArrayLen>(&self, proof: AtMost<P, S>) -> &Array<T, P> {
         self.split_prefix(proof).0
     }
 
     /// View the first `P::USIZE` elements as a mutable [`Array`].
+    #[must_use]
     #[inline]
     pub const fn prefix_mut<P: ArrayLen>(&mut self, proof: AtMost<P, S>) -> &mut Array<T, P> {
         self.split_prefix_mut(proof).0
@@ -337,6 +349,7 @@ impl<T, S: ArrayLen> Array<T, S> {
     /// assert_eq!(header.as_array(), &[0, 1, 2, 3, 4]);
     /// assert_eq!(payload.len(), 27);
     /// ```
+    #[must_use]
     #[inline]
     pub const fn split_prefix<P: ArrayLen>(&self, _proof: AtMost<P, S>) -> (&Array<T, P>, &[T]) {
         // By `AtMost`'s invariant, `P::USIZE <= S::USIZE`, so this doesn't
@@ -347,6 +360,7 @@ impl<T, S: ArrayLen> Array<T, S> {
 
     /// Split into the first `P::USIZE` elements, as a mutable [`Array`], and a
     /// mutable slice of the rest.
+    #[must_use]
     #[inline]
     pub const fn split_prefix_mut<P: ArrayLen>(
         &mut self,
@@ -368,12 +382,14 @@ impl<T, S: ArrayLen> Array<T, S> {
     /// let len_field: &Array<u8, Len<8>> = block.suffix_ref(at_most!(Len<8>, Len<64>));
     /// assert_eq!(len_field[0], 56);
     /// ```
+    #[must_use]
     #[inline]
     pub const fn suffix_ref<P: ArrayLen>(&self, proof: AtMost<P, S>) -> &Array<T, P> {
         self.split_suffix(proof).1
     }
 
     /// View the last `P::USIZE` elements as a mutable [`Array`].
+    #[must_use]
     #[inline]
     pub const fn suffix_mut<P: ArrayLen>(&mut self, proof: AtMost<P, S>) -> &mut Array<T, P> {
         self.split_suffix_mut(proof).1
@@ -381,6 +397,7 @@ impl<T, S: ArrayLen> Array<T, S> {
 
     /// Split into a slice of the rest and the last `P::USIZE` elements, as an
     /// [`Array`]. See [`Array::split_prefix`].
+    #[must_use]
     #[inline]
     pub const fn split_suffix<P: ArrayLen>(&self, _proof: AtMost<P, S>) -> (&[T], &Array<T, P>) {
         // By `AtMost`'s invariant, `P::USIZE <= S::USIZE`, so this neither
@@ -391,6 +408,7 @@ impl<T, S: ArrayLen> Array<T, S> {
 
     /// Split into a mutable slice of the rest and the last `P::USIZE`
     /// elements, as a mutable [`Array`].
+    #[must_use]
     #[inline]
     pub const fn split_suffix_mut<P: ArrayLen>(
         &mut self,
@@ -413,13 +431,16 @@ impl<T, S: ArrayLen> Array<T, S> {
     /// let block: Array<u8, Len<64>> = Array::pad_from(key, at_most!(Len<32>, Len<64>), 0);
     /// assert_eq!((block[31], block[32]), (0xab, 0));
     /// ```
+    #[must_use]
     #[inline]
     pub fn pad_from<P: ArrayLen>(prefix: Array<T, P>, _proof: AtMost<P, S>, fill: T) -> Self
     where
         T: Clone,
     {
         // By `AtMost`'s invariant, `P::USIZE <= S::USIZE`, so every element of
-        // `prefix` is used.
+        // `prefix` is used. `fill` is cloned for every remaining element rather
+        // than moved into the last one: with an iterator of the exact length,
+        // the optimizer can't remove the check that it yields enough elements.
         let mut prefix = prefix.into_iter();
         Self::from_fn(|_| prefix.next().unwrap_or_else(|| fill.clone()))
     }
@@ -443,23 +464,8 @@ impl<T, S: ArrayLen> Array<T, S> {
     /// # Ok::<(), core::num::ParseIntError>(())
     /// ```
     #[inline]
-    pub fn try_from_fn<E, F: FnMut(usize) -> Result<T, E>>(mut f: F) -> Result<Self, E> {
-        // Build the elements as `Option`s, so that no unsafe code is needed to
-        // handle a partially built array.
-        let mut error = None;
-        let elements: Array<Option<T>, S> = Array::from_fn(|i| {
-            if error.is_some() {
-                return None;
-            }
-            f(i).map_err(|e| error = Some(e)).ok()
-        });
-        match error {
-            Some(e) => Err(e),
-            // SAFETY: `f` never returned an error, so every element is `Some`.
-            // The optimizer can't prove this, so `unwrap` would leave a panic
-            // path.
-            None => Ok(elements.map(|x| unsafe { x.unwrap_unchecked() })),
-        }
+    pub fn try_from_fn<E, F: FnMut(usize) -> Result<T, E>>(f: F) -> Result<Self, E> {
+        size::try_build(f).map(Array)
     }
 
     /// Construct a new array from an iterator that yields exactly `S::USIZE`
@@ -497,6 +503,7 @@ impl<T, S: ArrayLen> Array<T, S> {
     }
 
     /// Apply `f` to each element, returning an array of the results.
+    #[must_use]
     #[inline]
     pub fn map<U, F: FnMut(T) -> U>(self, f: F) -> Array<U, S> {
         // `into_iter` has the length of the array, so this doesn't panic.
@@ -512,12 +519,14 @@ impl<T, S: ArrayLen> Array<T, S> {
     /// let lens: Array<usize, Len<2>> = names.each_ref().map(|s| s.len());
     /// assert_eq!(lens, [1, 1]);
     /// ```
+    #[must_use]
     #[inline]
     pub fn each_ref(&self) -> Array<&T, S> {
         Array::from_fn(|i| &self[i])
     }
 
     /// Mutably borrow each element, returning an array of mutable references.
+    #[must_use]
     #[inline]
     pub fn each_mut(&mut self) -> Array<&mut T, S> {
         // Not built from `iter_mut`, which the optimizer fully unrolls for
@@ -542,6 +551,7 @@ impl<T, S: ArrayLen> Array<T, S> {
     /// let pairs: Array<(&str, i32), Len<2>> = keys.zip(values);
     /// assert_eq!(pairs, [("a", 1), ("b", 2)]);
     /// ```
+    #[must_use]
     #[inline]
     pub fn zip<U>(self, other: Array<U, S>) -> Array<(T, U), S> {
         // Both iterators have the length of the array, so this doesn't panic.
@@ -564,6 +574,7 @@ impl<T, S: ArrayLen> Array<T, S> {
     /// # let expected = (Array::new([0x36, 0xc9]), Array::new([0x5c, 0xa3]));
     /// # assert_eq!(pads(&key), expected);
     /// ```
+    #[must_use]
     #[inline]
     pub fn map_ref<U, F: FnMut(&T) -> U>(&self, mut f: F) -> Array<U, S> {
         Array::from_fn(|i| f(&self[i]))
@@ -573,6 +584,7 @@ impl<T, S: ArrayLen> Array<T, S> {
     ///
     /// Unlike `a.iter().zip(b)`, this cannot silently truncate the result, as
     /// both arrays must have the same size.
+    #[must_use]
     #[inline]
     pub fn zip_with<U, V, F: FnMut(&T, &U) -> V>(
         &self,
@@ -617,6 +629,7 @@ impl<T, S: ArrayLen> Array<T, S> {
     /// let abc: Array<u8, Sum<Sum<Len<2>, Len<1>>, Len<3>>> = a.concat(b).concat(c);
     /// assert_eq!(abc.as_slice(), &[1, 2, 3, 4, 5, 6]);
     /// ```
+    #[must_use]
     #[inline]
     pub const fn concat<B: ArrayLen>(self, other: Array<T, B>) -> Array<T, Sum<S, B>> {
         const { Array::<T, Sum<S, B>>::LAYOUT_OK };
@@ -680,6 +693,7 @@ pub(crate) const unsafe fn transmute_layout<Src, Dst>(src: Src) -> Dst {
 impl<T, A: ArrayLen, B: ArrayLen> Array<T, Sum<A, B>> {
     /// Split a concatenated [`Array`] into its parts. This is the inverse of
     /// [`Array::concat`].
+    #[must_use]
     #[inline]
     pub const fn parts(self) -> (Array<T, A>, Array<T, B>) {
         const { Self::LAYOUT_OK };
@@ -700,6 +714,7 @@ impl<T, A: ArrayLen, B: ArrayLen> Array<T, Sum<A, B>> {
 
     /// Split a reference to a concatenated [`Array`] into references to its
     /// parts.
+    #[must_use]
     #[inline]
     pub const fn split_ref(&self) -> (&Array<T, A>, &Array<T, B>) {
         let Concat(a, b) = &self.0;
@@ -708,6 +723,7 @@ impl<T, A: ArrayLen, B: ArrayLen> Array<T, Sum<A, B>> {
 
     /// Split a mutable reference to a concatenated [`Array`] into mutable
     /// references to its parts.
+    #[must_use]
     #[inline]
     pub const fn split_mut(&mut self) -> (&mut Array<T, A>, &mut Array<T, B>) {
         let Concat(a, b) = &mut self.0;
@@ -745,6 +761,7 @@ impl<T, A: ArrayLen, B: ArrayLen> Array<T, Sum<A, B>> {
 impl<T, A: ArrayLen, B: ArrayLen> Array<T, Prod<A, B>> {
     /// Flatten an [`Array`] of chunks. This is the inverse of
     /// [`Array::into_chunks`].
+    #[must_use]
     #[inline]
     pub const fn from_chunks(chunks: Array<Array<T, B>, A>) -> Self {
         const { Self::LAYOUT_OK };
@@ -754,6 +771,7 @@ impl<T, A: ArrayLen, B: ArrayLen> Array<T, Prod<A, B>> {
     }
 
     /// Split the [`Array`] into an [`Array`] of chunks.
+    #[must_use]
     #[inline]
     pub const fn into_chunks(self) -> Array<Array<T, B>, A> {
         const { Self::LAYOUT_OK };
@@ -763,6 +781,7 @@ impl<T, A: ArrayLen, B: ArrayLen> Array<T, Prod<A, B>> {
     }
 
     /// View the [`Array`] as an [`Array`] of chunks.
+    #[must_use]
     #[inline]
     pub const fn as_chunks(&self) -> &Array<Array<T, B>, A> {
         // `self` holds `A::USIZE * B::USIZE` elements, so neither call
@@ -772,6 +791,7 @@ impl<T, A: ArrayLen, B: ArrayLen> Array<T, Prod<A, B>> {
     }
 
     /// View the [`Array`] as a mutable [`Array`] of chunks.
+    #[must_use]
     #[inline]
     pub const fn as_chunks_mut(&mut self) -> &mut Array<Array<T, B>, A> {
         // `self` holds `A::USIZE * B::USIZE` elements, so neither call
@@ -794,36 +814,42 @@ impl<T, A: ArrayLen, B: ArrayLen> Array<T, Prod<A, B>> {
 /// ```
 impl<T, const N: usize> Array<T, Len<N>> {
     /// Wrap a plain array.
+    #[must_use]
     #[inline]
     pub const fn new(arr: [T; N]) -> Self {
         Array(arr)
     }
 
     /// Wrap a reference to a plain array, without copying it.
+    #[must_use]
     #[inline]
     pub const fn from_ref(arr: &[T; N]) -> &Self {
         Self::wrap_ref(arr)
     }
 
     /// Wrap a mutable reference to a plain array, without copying it.
+    #[must_use]
     #[inline]
     pub const fn from_mut(arr: &mut [T; N]) -> &mut Self {
         Self::wrap_mut(arr)
     }
 
     /// View the [`Array`] as a plain array.
+    #[must_use]
     #[inline]
     pub const fn as_array(&self) -> &[T; N] {
         &self.0
     }
 
     /// View the [`Array`] as a mutable plain array.
+    #[must_use]
     #[inline]
     pub const fn as_mut_array(&mut self) -> &mut [T; N] {
         &mut self.0
     }
 
     /// Unwrap the plain array.
+    #[must_use]
     #[inline]
     pub const fn into_array(self) -> [T; N] {
         // SAFETY: `Self` is `repr(transparent)` over `[T; N]`. Unlike `self.0`,
@@ -833,7 +859,7 @@ impl<T, const N: usize> Array<T, Len<N>> {
 }
 
 /// Error when converting a slice into an [`Array`].
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct TryFromSliceError(());
 
 /// Error when an iterator passed to [`Array::try_from_iter`] yields fewer or

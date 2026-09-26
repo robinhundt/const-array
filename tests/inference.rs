@@ -389,6 +389,18 @@ fn compare_with_plain_arrays() {
 }
 
 #[test]
+fn compare_arrays_of_different_element_types() {
+    // Like for plain arrays, the element types only need to be comparable.
+    let owned: Array<String, S6> = Array::from_fn(|i| i.to_string());
+    let borrowed: Array<&str, S6> = Array::from_fn(|i| ["0", "1", "2", "3", "4", "5"][i]);
+    assert!(owned == borrowed);
+    // The other side is still inferred when it is not annotated.
+    let a: Array<u8, S7> = Array::from_fn(|i| i as u8);
+    assert_eq!(a, Array::from_fn(|i| i as u8));
+    assert_ne!(a, Array::default());
+}
+
+#[test]
 fn try_from_slice_error_is_an_error() {
     let err = <&Array<u8, S3>>::try_from(&[1u8, 2][..]).unwrap_err();
     assert_eq!(err.to_string(), "could not convert slice to array");

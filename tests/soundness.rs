@@ -115,6 +115,9 @@ fn try_from_mut_slice_writes_through() {
     }
     // The write went back to the original buffer.
     assert_eq!(data, [99, 2, 3, 77]);
+
+    let wrong: Result<&mut Array<i32, Len<3>>, _> = (&mut data[..]).try_into();
+    assert!(wrong.is_err());
 }
 
 // The owned `TryFrom<&[T]>` requires `S::ArrayType<T>: Copy`; since `Concat`
@@ -593,6 +596,10 @@ fn slice_as_chunks_mut_writes_into_the_slice() {
     assert_eq!(data[5], 50);
     assert_eq!(data[7], 70);
     assert_eq!(data[13], 130);
+
+    // A length whose quotient and remainder differ.
+    let (chunks, rest) = Array::<i32, S6>::slice_as_chunks_mut(&mut data[..13]);
+    assert_eq!((chunks.len(), rest.len()), (2, 1));
 }
 
 #[test]

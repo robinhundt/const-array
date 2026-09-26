@@ -68,8 +68,8 @@ fn try_from_slice_ref_infers() {
 
 #[test]
 fn try_from_slice_owned_copy() {
-    // The owned `TryFrom` exists for `Copy` element types and any size whose
-    // `ArrayType` is `Copy` -- including `Sum` sizes (`Concat: Copy`).
+    // The owned `TryFrom` clones the elements, so it exists for any size,
+    // including `Sum` sizes.
     let data = [1u8, 2, 3, 4];
     let arr: Array<u8, Sum<Len<1>, Len<3>>> = data[..].try_into().unwrap();
     assert_eq!(&*arr, &[1, 2, 3, 4]);

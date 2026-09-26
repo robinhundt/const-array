@@ -440,3 +440,12 @@ fn at_least_is_at_most_swapped() {
     let _: AtLeast<S3, S3> = AtLeast::refl();
     assert!(AtLeast::<Len<2>, S3>::try_new().is_none());
 }
+
+#[test]
+fn sizes_debug_print_their_structure() {
+    assert_eq!(format!("{:?}", Len::<4>), "Len<4>");
+    assert_eq!(
+        format!("{:?}", Sum::<Len<1>, Prod<Len<2>, Len<3>>>::default()),
+        "Sum<Len<1>, Prod<Len<2>, Len<3>>>"
+    );
+}

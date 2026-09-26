@@ -186,8 +186,15 @@ pub unsafe trait ArrayLen:
 }
 
 /// A plain length of `N` elements.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Len<const N: usize>;
+
+/// Formats as `Len<N>`.
+impl<const N: usize> Debug for Len<N> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Len<{N}>")
+    }
+}
 /// An `A` followed by a `B`.
 ///
 /// An [`Array`](crate::Array) of this size can be split into its parts with
@@ -200,7 +207,8 @@ pub struct Sum<A, B>(PhantomData<(A, B)>);
 pub struct Prod<A, B>(PhantomData<(A, B)>);
 
 // The following traits are implemented manually for `Sum` and `Prod`, because
-// deriving them would add unnecessary bounds on `A` and `B`. `ArrayLen`
+// deriving them would add unnecessary bounds on `A` and `B` (`Debug` only
+// needs its bounds to print the structure). `ArrayLen`
 // requires them, so that `#[derive]`s on user types that are generic over an
 // `ArrayLen` work.
 impl<A, B> Clone for Sum<A, B> {
@@ -211,9 +219,10 @@ impl<A, B> Clone for Sum<A, B> {
 
 impl<A, B> Copy for Sum<A, B> {}
 
-impl<A, B> Debug for Sum<A, B> {
+/// Formats the structure of the size, e.g. `Sum<Len<2>, Len<4>>`.
+impl<A: Debug + Default, B: Debug + Default> Debug for Sum<A, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Sum")
+        write!(f, "Sum<{:?}, {:?}>", A::default(), B::default())
     }
 }
 
@@ -255,9 +264,10 @@ impl<A, B> Clone for Prod<A, B> {
 
 impl<A, B> Copy for Prod<A, B> {}
 
-impl<A, B> Debug for Prod<A, B> {
+/// Formats the structure of the size, e.g. `Prod<Len<2>, Len<4>>`.
+impl<A: Debug + Default, B: Debug + Default> Debug for Prod<A, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Prod")
+        write!(f, "Prod<{:?}, {:?}>", A::default(), B::default())
     }
 }
 

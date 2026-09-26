@@ -1,5 +1,8 @@
 # Const Array
 
+[![crates.io](https://img.shields.io/crates/v/const-array.svg)](https://crates.io/crates/const-array)
+[![docs.rs](https://docs.rs/const-array/badge.svg)](https://docs.rs/const-array)
+
 <div class="warning">
 
 **Warning:** This crate is experimental and contains LLM generated unsafe code.

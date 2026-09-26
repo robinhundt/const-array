@@ -183,6 +183,44 @@ jobs:
       - name: Check docs
         run: cargo doc --verbose --all-features --no-deps -Zunstable-options -Zrustdoc-scrape-examples
 
+  mutants:
+    name: Mutants in the diff
+    runs-on: "ubuntu-latest"
+    env:
+      # The compile_fail snapshots depend on the exact rustc version.
+      CONST_ARRAY_SKIP_COMPILE_FAIL: 1
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The base commit is needed for the diff.
+          fetch-depth: 0
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: stable
+
+      - name: Install cargo-mutants
+        uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
+        with:
+          tool: cargo-mutants
+
+      - run: cargo mutants --version
+
+      - name: Run mutants in the diff
+        run: |
+          git diff "$BASE_SHA" HEAD > git.diff
+          cargo mutants --no-shuffle -vV --in-diff git.diff
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutants-in-diff
+          path: mutants.out
+
   # The single check that branch protection requires, so that adding, removing
   # or renaming the jobs above doesn't require changing the ruleset. It runs
   # even when a job fails, because GitHub counts a skipped required check as
@@ -190,7 +228,7 @@ jobs:
   ci:
     name: CI
     if: always()
-    needs: [test, compile-fail, msrv, miri, lint, docs]
+    needs: [test, compile-fail, msrv, miri, lint, docs, mutants]
     runs-on: "ubuntu-latest"
     steps:
       - name: Check that all jobs succeeded

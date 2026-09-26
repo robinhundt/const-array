@@ -198,6 +198,10 @@ fn std_traits_hold_in_generic_code() {
     let a: Array<i32, S3> = Array::from([1, 2, 3]);
     assert_eq!(format!("{a:?}"), "[1, 2, 3]");
     assert!(a < Array::from([1, 2, 4]));
+    assert_ne!(a, Array::from([1, 2, 4]));
+    let b: Array<i32, Len<3>> = Array::from([1, 2, 3]);
+    assert!([1, 2, 3] == b && [1, 2, 4] != b);
+    assert!(b == [1, 2, 3] && b != [1, 2, 4]);
 }
 
 #[test]
@@ -594,6 +598,25 @@ fn sizes_debug_print_their_structure() {
         format!("{:?}", Sum::<Len<1>, Prod<Len<2>, Len<3>>>::default()),
         "Sum<Len<1>, Prod<Len<2>, Len<3>>>"
     );
+}
+
+#[test]
+fn sizes_are_all_equal() {
+    use core::cmp::Ordering;
+
+    let sum = Sum::<Len<1>, Len<2>>::default();
+    assert_eq!(sum.partial_cmp(&sum), Some(Ordering::Equal));
+    let prod = Prod::<Len<1>, Len<2>>::default();
+    assert_eq!(prod.partial_cmp(&prod), Some(Ordering::Equal));
+}
+
+#[test]
+fn proofs_and_iterators_debug_print() {
+    assert_eq!(format!("{:?}", same_len!(S6, Len<6>)), "SameLen");
+    assert_eq!(format!("{:?}", at_most!(S3, S6)), "AtMost");
+    let mut iter = Array::<i32, S3>::from([1, 2, 3]).into_iter();
+    iter.next();
+    assert_eq!(format!("{iter:?}"), "IntoIter([2, 3])");
 }
 
 #[test]

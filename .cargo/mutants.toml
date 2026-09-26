@@ -1,0 +1,15 @@
+# Configuration for cargo-mutants: https://mutants.rs
+#
+# Run the full suite with `cargo mutants`, or only the mutants in your changes
+# with `git diff main > git.diff && cargo mutants --in-diff git.diff`. Set
+# `CONST_ARRAY_SKIP_COMPILE_FAIL=1` unless you are on the toolchain that the
+# compile_fail snapshots were made with (see .github/workflows).
+
+# The crate denies some lints, which mutants may trigger without being wrong.
+cap_lints = true
+
+exclude_re = [
+    # `Sum` and `Prod` are zero-sized markers, so every value is equal to
+    # `Default::default()`.
+    '<impl Clone for (Sum|Prod)<A, B>>::clone',
+]

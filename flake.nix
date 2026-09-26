@@ -38,7 +38,7 @@
         ];
 
         mkDevShell = tc: pkgs.mkShell {
-          packages = [ tc pkgs.rust-analyzer ];
+          packages = [ tc pkgs.rust-analyzer pkgs.cargo-mutants ];
 
           RUST_SRC_PATH = "${tc}/lib/rustlib/src/rust/library";
         };

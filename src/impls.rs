@@ -1,6 +1,7 @@
 //! Standard library trait impls for [`Array`] that delegate to its slice.
 
 use core::{
+    borrow::{Borrow, BorrowMut},
     cmp::Ordering,
     fmt,
     hash::{Hash, Hasher},
@@ -31,6 +32,19 @@ impl<T, S: ArrayLen> AsRef<[T]> for Array<T, S> {
 
 impl<T, S: ArrayLen> AsMut<[T]> for Array<T, S> {
     fn as_mut(&mut self) -> &mut [T] {
+        self.as_mut_slice()
+    }
+}
+
+// `Eq`, `Ord` and `Hash` delegate to the slice, as `Borrow` requires.
+impl<T, S: ArrayLen> Borrow<[T]> for Array<T, S> {
+    fn borrow(&self) -> &[T] {
+        self.as_slice()
+    }
+}
+
+impl<T, S: ArrayLen> BorrowMut<[T]> for Array<T, S> {
+    fn borrow_mut(&mut self) -> &mut [T] {
         self.as_mut_slice()
     }
 }

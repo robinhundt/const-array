@@ -574,6 +574,20 @@ fn try_from_fn_and_try_from_iter() {
 }
 
 #[test]
+fn borrow_as_slice_for_map_lookups() {
+    use std::collections::{BTreeMap, HashMap};
+
+    let key: Array<u8, S6> = Array::from_fn(|i| i as u8);
+    let mut hash = HashMap::new();
+    hash.insert(key, "hash");
+    let mut btree = BTreeMap::new();
+    btree.insert(key, "btree");
+    let lookup: &[u8] = &[0, 1, 2, 3, 4, 5];
+    assert_eq!(hash.get(lookup), Some(&"hash"));
+    assert_eq!(btree.get(lookup), Some(&"btree"));
+}
+
+#[test]
 fn sizes_debug_print_their_structure() {
     assert_eq!(format!("{:?}", Len::<4>), "Len<4>");
     assert_eq!(

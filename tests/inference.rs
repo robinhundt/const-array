@@ -254,7 +254,9 @@ fn plain_array_reference_conversions() {
     assert_eq!(back, &[1, 2, 3]);
     let m: &mut Array<u8, S3> = (&mut raw).into();
     m.as_mut_array()[0] = 9;
-    assert_eq!(raw, [9, 2, 3]);
+    let back: &mut [u8; 3] = m.into();
+    back[1] = 8;
+    assert_eq!(raw, [9, 8, 3]);
 }
 
 #[test]
@@ -603,11 +605,29 @@ fn sizes_debug_print_their_structure() {
 #[test]
 fn sizes_are_all_equal() {
     use core::cmp::Ordering;
+    use std::hash::{BuildHasher, RandomState};
+
+    // All values of a size are equal, so hashing one writes nothing.
+    let state = RandomState::new();
+    let empty = state.hash_one(());
 
     let sum = Sum::<Len<1>, Len<2>>::default();
     assert_eq!(sum.partial_cmp(&sum), Some(Ordering::Equal));
+    assert_eq!(Clone::clone(&sum), sum);
+    assert_eq!(state.hash_one(sum), empty);
     let prod = Prod::<Len<1>, Len<2>>::default();
     assert_eq!(prod.partial_cmp(&prod), Some(Ordering::Equal));
+    assert_eq!(Clone::clone(&prod), prod);
+    assert_eq!(state.hash_one(prod), empty);
+}
+
+#[test]
+fn proofs_are_clone() {
+    let a: Array<u8, S6> = Array::from_fn(|i| i as u8);
+    let same_len = Clone::clone(&same_len!(S6, Len<6>));
+    assert_eq!(a.cast_ref(same_len).as_array(), &[0, 1, 2, 3, 4, 5]);
+    let at_most = Clone::clone(&at_most!(S3, S6));
+    assert_eq!(a.prefix_ref(at_most).as_slice(), &[0, 1, 2]);
 }
 
 #[test]

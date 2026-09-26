@@ -7,10 +7,13 @@
 //! The functions below are instantiated for concrete sizes and marked
 //! `#[no_panic]`, which fails to link if a panic path remains in them.
 //!
-//! This only works with optimizations, so the tests only run without debug
-//! assertions, in the `no-panic` profile:
+//! This only works with optimizations and depends on the compiler's inlining
+//! decisions, so the tests only run when enabled with the `no_panic_tests`
+//! cfg, in the `no-panic` profile:
 //!
-//!     cargo test --profile no-panic --test no_panic
+//! ```sh
+//! RUSTFLAGS="--cfg no_panic_tests" cargo test --profile no-panic --test no_panic
+//! ```
 //!
 //! The profile is the release profile with a single codegen unit. With more,
 //! a method is sometimes not inlined into the wrapper, and `no_panic` reports
@@ -21,8 +24,11 @@
 //! reference the `no_panic` error symbol, and where the panic comes from.
 //! Inspect them, e.g. with `cargo-show-asm`:
 //!
-//!     cargo asm --profile no-panic --test no_panic "no_panic::sum::from_fn"
-#![cfg(not(debug_assertions))]
+//! ```sh
+//! RUSTFLAGS="--cfg no_panic_tests" cargo asm --profile no-panic --test no_panic \
+//!     "no_panic::sum::from_fn"
+//! ```
+#![cfg(no_panic_tests)]
 
 use std::hint::black_box;
 

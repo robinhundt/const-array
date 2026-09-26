@@ -171,6 +171,19 @@ have the same limitation. So unlike a `[&'static str; 2]`, an
 `let b: [u8; 32] = digest.finalize().into(); Array::new(b)`. An
 `Array<T, Len<N>>` compares equal to a `[T; N]` directly.
 
+## Performance
+
+Methods like `from_fn`, `split_at` with an `AtMost` proof, or `zip` use
+checked operations whose checks can't fail, as the lengths are constants
+after monomorphization. The crate relies on the optimizer to remove them,
+which CI checks for a set of sizes. This needs the methods to be inlined into
+your code, which is most reliable with a single codegen unit:
+
+```toml
+[profile.release]
+codegen-units = 1
+```
+
 ## Minimum supported Rust version
 
 The minimum supported Rust version is 1.85.

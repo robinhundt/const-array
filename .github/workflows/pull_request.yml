@@ -85,6 +85,8 @@ jobs:
       - run: cargo --version
 
       - name: Run no_panic tests
+        env:
+          RUSTFLAGS: --cfg no_panic_tests
         run: cargo test --profile no-panic --test no_panic
 
   msrv:

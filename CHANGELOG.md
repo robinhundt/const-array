@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.7](https://github.com/robinhundt/const-array/compare/v0.1.0-alpha.6...v0.1.0-alpha.7) - 2026-09-26
+
+### Added
+
+- derive PartialEq and Eq for TryFromSliceError, like TryFromIterError
+- compare arrays whose element types are comparable
+- mark the methods of Array and IntoIter that only return a value #[must_use]
+
+### Other
+
+- match on the result in try_build instead of using ?
+- tell the AtMost lemmas apart from checked and try_new in the README
+- build try_from_fn in place and stop at the first error
+- check that the AtMost lemmas can't be applied to overflowing lengths
+
 ## [0.1.0-alpha.6](https://github.com/robinhundt/const-array/compare/v0.1.0-alpha.5...v0.1.0-alpha.6) - 2026-09-26
 
 ### Added

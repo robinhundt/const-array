@@ -159,6 +159,13 @@ implements `Copy`, `Debug`, `Default`, `Eq`, `Ord` and `Hash`, so
 `#[derive(Clone, Debug, Default, PartialEq)] struct Key<S: ArrayLen>`
 needs no extra bounds.
 
+**Variance.** `Array<T, S>` is *invariant* in `T`, because its storage is
+the associated type `S::ArrayType<T>`. `generic-array` and `hybrid-array`
+have the same limitation. So unlike a `[&'static str; 2]`, an
+`Array<&'static str, Len<2>>` can't be passed where an
+`Array<&'a str, Len<2>>` is expected. Convert explicitly, e.g. with
+`a.map(|s| s)`, or give the elements the shorter lifetime from the start.
+
 **Interop with `typenum`-based crates** such as `generic-array` or
 `hybrid-array` goes through plain arrays at concrete sizes, e.g.
 `let b: [u8; 32] = digest.finalize().into(); Array::new(b)`. An

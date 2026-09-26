@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.6](https://github.com/robinhundt/const-array/compare/v0.1.0-alpha.5...v0.1.0-alpha.6) - 2026-09-26
+
+### Added
+
+- implement Clone for IntoIter, with faster nth, count and last
+- implement Borrow and BorrowMut for Array
+- add try_from_fn, try_from_iter, each_ref, each_mut and zip
+- [**breaking**] add proof lemmas and make proofs invariant
+- mark proof constructors and combinators #[must_use]
+- print the structure of sizes in Debug
+
+### Other
+
+- call the functions defined in the doctests
+- cover the trait impls of arrays, sizes and proofs
+- run the no_panic tests in the release profile
+- only run the no_panic tests with the no_panic_tests cfg
+- count up with a for loop in build
+- mark the methods #[inline]
+- build arrays flat and in place
+- remove the panic paths from try_from_fn and IntoIter drops
+- check that infallible checks are optimized away with no-panic
+- rewrite the changelog
+- document that Array is invariant in T
+- [**breaking**] remove ArrayType, Concat and Repeat from the public API
+- scrape the examples for the API docs
+- add LICENSE, declare MSRV and package metadata
+
 ### Added
 
 - Lemmas that prove lengths equal or ordered for all sizes, so generic code

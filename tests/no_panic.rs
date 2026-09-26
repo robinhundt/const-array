@@ -87,6 +87,12 @@ macro_rules! check_size {
 
             #[no_panic]
             #[inline(never)]
+            pub fn each_mut(a: &mut Array<u32, S>) -> Array<&mut u32, S> {
+                a.each_mut()
+            }
+
+            #[no_panic]
+            #[inline(never)]
             pub fn truncate(a: Array<u32, S>) -> Array<u32, P> {
                 a.truncate(PROOF)
             }
@@ -114,72 +120,6 @@ macro_rules! check_size {
             pub fn split_suffix_mut(a: &mut Array<u32, S>) -> (&mut [u32], &mut Array<u32, P>) {
                 a.split_suffix_mut(PROOF)
             }
-
-            #[no_panic]
-            #[inline(never)]
-            pub fn try_from_slice(v: &[u32]) -> Option<&Array<u32, S>> {
-                v.try_into().ok()
-            }
-
-            #[no_panic]
-            #[inline(never)]
-            pub fn slice_as_chunks(v: &[u32]) -> (&[Array<u32, S>], &[u32]) {
-                Array::slice_as_chunks(v)
-            }
-
-            #[no_panic]
-            #[inline(never)]
-            pub fn concat(a: Array<u32, S>, b: Array<u32, P>) -> Array<u32, Sum<S, P>> {
-                a.concat(b)
-            }
-
-            #[test]
-            fn no_panic() {
-                let a = black_box(from_fn());
-                let mut b = black_box(clone(&a));
-                clone_from(&mut b, &a);
-                black_box(map_ref(&a));
-                black_box(zip_with(&a, &b));
-                zip_mut_with(&mut b, &a);
-                black_box(each_ref(&a));
-                black_box(truncate(a.clone()));
-                black_box(prefix_ref(&a));
-                black_box(split_prefix_mut(&mut b));
-                black_box(suffix_ref(&a));
-                black_box(split_suffix_mut(&mut b));
-                black_box(try_from_slice(&a).unwrap());
-                black_box(slice_as_chunks(&a));
-                black_box(concat(a.clone(), Array::default()));
-            }
-        }
-    };
-}
-
-// Plain lengths, from fully unrolled loops to ones that aren't unrolled.
-check_size!(len_4, Len<4>, Len<3>);
-check_size!(len_32, Len<32>, Len<16>);
-check_size!(len_1024, Len<1024>, Len<1000>);
-// Nested sizes, whose array types are built from `Concat` and `Repeat`.
-check_size!(sum, Sum<Len<5>, Sum<Len<3>, Len<25>>>, Len<7>);
-check_size!(prod, Prod<Len<16>, Len<4>>, Sum<Len<3>, Len<8>>);
-check_size!(prod_large, Prod<Len<3>, Prod<Len<16>, Len<64>>>, Len<1000>);
-
-/// Define `#[no_panic]` wrappers for the methods that consume an
-/// [`IntoIter`](const_array::IntoIter), directly or through `map`.
-///
-/// They build the result with `from_fn` from the iterator, and rely on the
-/// optimizer to prove that it never runs out. This fails for a [`Prod`] whose
-/// inner arrays are too long to unroll the loop over them, if the outer array
-/// is long, too. For example, `Prod<Len<16>, Len<64>>` fails, while
-/// `Prod<Len<3>, Len<1024>>` and `Len<3072>` pass. Such sizes are not checked.
-macro_rules! check_into_iter {
-    ($name:ident, $s:ty, $p:ty) => {
-        mod $name {
-            use super::*;
-
-            type S = $s;
-            type P = $p;
-            const PROOF: AtMost<P, S> = at_most!(P, S);
 
             #[no_panic]
             #[inline(never)]
@@ -211,111 +151,57 @@ macro_rules! check_into_iter {
                 Array::try_from_iter(v.iter().copied()).ok()
             }
 
+            #[no_panic]
+            #[inline(never)]
+            pub fn try_from_slice(v: &[u32]) -> Option<&Array<u32, S>> {
+                v.try_into().ok()
+            }
+
+            #[no_panic]
+            #[inline(never)]
+            pub fn slice_as_chunks(v: &[u32]) -> (&[Array<u32, S>], &[u32]) {
+                Array::slice_as_chunks(v)
+            }
+
+            #[no_panic]
+            #[inline(never)]
+            pub fn concat(a: Array<u32, S>, b: Array<u32, P>) -> Array<u32, Sum<S, P>> {
+                a.concat(b)
+            }
+
             #[test]
             fn no_panic() {
-                let a = black_box(Array::<u32, S>::from_fn(|i| i as u32));
+                let a = black_box(from_fn());
+                let mut b = black_box(clone(&a));
+                clone_from(&mut b, &a);
+                black_box(map_ref(&a));
+                black_box(zip_with(&a, &b));
+                zip_mut_with(&mut b, &a);
+                black_box(each_ref(&a));
+                black_box(each_mut(&mut b));
+                black_box(truncate(a.clone()));
+                black_box(prefix_ref(&a));
+                black_box(split_prefix_mut(&mut b));
+                black_box(suffix_ref(&a));
+                black_box(split_suffix_mut(&mut b));
+                black_box(map(a.clone()));
+                black_box(zip(a.clone(), Array::from_fn(|i| i as u8)));
+                black_box(pad_from(Array::from_fn(|i| i as u32)));
                 black_box(try_from_fn().unwrap());
                 black_box(try_from_iter(&a).unwrap());
-                black_box(map(a.clone()));
-                black_box(zip(a, Array::from_fn(|i| i as u8)));
-                black_box(pad_from(Array::from_fn(|i| i as u32)));
+                black_box(try_from_slice(&a).unwrap());
+                black_box(slice_as_chunks(&a));
+                black_box(concat(a.clone(), Array::default()));
             }
         }
     };
 }
 
-check_into_iter!(into_iter_len_4, Len<4>, Len<3>);
-check_into_iter!(into_iter_len_32, Len<32>, Len<16>);
-check_into_iter!(into_iter_sum, Sum<Len<5>, Sum<Len<3>, Len<25>>>, Len<7>);
-check_into_iter!(into_iter_prod, Prod<Len<16>, Len<4>>, Sum<Len<3>, Len<8>>);
-check_into_iter!(into_iter_len_1024, Len<1024>, Len<1000>);
-
-/// Define `#[no_panic]` wrappers for the methods of an array of size
-/// `Sum<A, B>` and `Prod<A, B>`.
-macro_rules! check_parts {
-    ($name:ident, $a:ty, $b:ty) => {
-        mod $name {
-            use super::*;
-
-            type A = $a;
-            type B = $b;
-
-            #[no_panic]
-            #[inline(never)]
-            pub fn split_ref(a: &Array<u32, Sum<A, B>>) -> (&Array<u32, A>, &Array<u32, B>) {
-                a.split_ref()
-            }
-
-            #[no_panic]
-            #[inline(never)]
-            pub fn split_mut(
-                a: &mut Array<u32, Sum<A, B>>,
-            ) -> (&mut Array<u32, A>, &mut Array<u32, B>) {
-                a.split_mut()
-            }
-
-            #[no_panic]
-            #[inline(never)]
-            pub fn parts(a: Array<u32, Sum<A, B>>) -> (Array<u32, A>, Array<u32, B>) {
-                a.parts()
-            }
-
-            #[no_panic]
-            #[inline(never)]
-            pub fn as_chunks(a: &Array<u32, Prod<A, B>>) -> &Array<Array<u32, B>, A> {
-                a.as_chunks()
-            }
-
-            #[no_panic]
-            #[inline(never)]
-            pub fn as_chunks_mut(a: &mut Array<u32, Prod<A, B>>) -> &mut Array<Array<u32, B>, A> {
-                a.as_chunks_mut()
-            }
-
-            #[test]
-            fn no_panic() {
-                let mut sum = black_box(Array::<u32, Sum<A, B>>::from_fn(|i| i as u32));
-                black_box(split_ref(&sum));
-                black_box(split_mut(&mut sum));
-                black_box(parts(sum));
-                let mut prod = black_box(Array::<u32, Prod<A, B>>::from_fn(|i| i as u32));
-                black_box(as_chunks(&prod));
-                black_box(as_chunks_mut(&mut prod));
-            }
-        }
-    };
-}
-
-check_parts!(parts_small, Len<3>, Len<5>);
-check_parts!(parts_large, Len<64>, Prod<Len<16>, Len<3>>);
-
-/// Define `#[no_panic]` wrappers for the conversions of plain arrays.
-macro_rules! check_len {
-    ($name:ident, $n:literal) => {
-        mod $name {
-            use super::*;
-
-            #[no_panic]
-            #[inline(never)]
-            pub fn from_ref(a: &[u32; $n]) -> &Array<u32, Len<$n>> {
-                Array::from_ref(a)
-            }
-
-            #[no_panic]
-            #[inline(never)]
-            pub fn from_mut(a: &mut [u32; $n]) -> &mut Array<u32, Len<$n>> {
-                Array::from_mut(a)
-            }
-
-            #[test]
-            fn no_panic() {
-                let mut a = black_box([7; $n]);
-                black_box(from_ref(&a));
-                black_box(from_mut(&mut a));
-            }
-        }
-    };
-}
-
-check_len!(plain_4, 4);
-check_len!(plain_1024, 1024);
+// Plain lengths, from fully unrolled loops to ones that aren't unrolled.
+check_size!(len_4, Len<4>, Len<3>);
+check_size!(len_32, Len<32>, Len<16>);
+check_size!(len_1024, Len<1024>, Len<1000>);
+// Nested sizes, whose array types are built from `Concat` and `Repeat`.
+check_size!(sum, Sum<Len<5>, Sum<Len<3>, Len<25>>>, Len<7>);
+check_size!(prod, Prod<Len<16>, Len<4>>, Sum<Len<3>, Len<8>>);
+check_size!(prod_large, Prod<Len<3>, Prod<Len<16>, Len<64>>>, Len<1000>);

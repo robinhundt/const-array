@@ -37,9 +37,8 @@ impl<T: Clone, S: ArrayLen> Clone for Array<T, S> {
 /// [`Array`] is [`Copy`] for every concrete [`ArrayLen`] if `T: Copy`.
 ///
 /// In code that is generic over the size, the compiler cannot infer this.
-/// There, prefer [`Clone::clone`], which is just as fast: it delegates to the
-/// standard library's `Clone` for arrays, which is specialized to a plain copy
-/// for `Copy` types. If you need actual `Copy` semantics, add the bound
+/// There, prefer [`Clone::clone`], which is just as fast: for `Copy` types, it
+/// compiles to a plain copy. If you need actual `Copy` semantics, add the bound
 /// `S: ArrayLen<ArrayType<T>: Copy>`:
 ///
 /// ```
@@ -195,7 +194,7 @@ impl<T, S: ArrayLen> Array<T, S> {
     ///
     /// The function is called with each index of the array in order.
     pub fn from_fn<F: FnMut(usize) -> T>(f: F) -> Array<T, S> {
-        Array(S::ArrayType::build(f, 0))
+        Array(size::build(f))
     }
 
     /// Reinterpret the [`Array`] as an array of size `S2` with the same length.
@@ -482,14 +481,18 @@ impl<T, S: ArrayLen> Array<T, S> {
     /// assert_eq!(lens, [1, 1]);
     /// ```
     pub fn each_ref(&self) -> Array<&T, S> {
-        // `iter` has the length of the array, so this doesn't panic.
-        Array::from_exact_iter(self.iter())
+        Array::from_fn(|i| &self[i])
     }
 
     /// Mutably borrow each element, returning an array of mutable references.
     pub fn each_mut(&mut self) -> Array<&mut T, S> {
-        // `iter_mut` has the length of the array, so this doesn't panic.
-        Array::from_exact_iter(self.iter_mut())
+        // Not built from `iter_mut`, which the optimizer fully unrolls for
+        // large `Prod` sizes.
+        let base = self.as_mut_slice().as_mut_ptr();
+        // SAFETY: `from_fn` calls the closure once for each index below
+        // `S::USIZE`, so the references are in bounds and disjoint. They
+        // mutably borrow from `self`.
+        Array::from_fn(|i| unsafe { &mut *base.add(i) })
     }
 
     /// Combine two arrays of the same size into an array of pairs.

@@ -182,3 +182,24 @@ jobs:
 
       - name: Check docs
         run: cargo doc --verbose --all-features --no-deps -Zunstable-options -Zrustdoc-scrape-examples
+
+  # The single check that branch protection requires, so that adding, removing
+  # or renaming the jobs above doesn't require changing the ruleset. It runs
+  # even when a job fails, because GitHub counts a skipped required check as
+  # passed.
+  ci:
+    name: CI
+    if: always()
+    needs: [test, compile-fail, msrv, miri, lint, docs]
+    runs-on: "ubuntu-latest"
+    steps:
+      - name: Check that all jobs succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in $RESULTS; do
+            if [ "$result" != "success" ]; then
+              echo "A required job finished with result: $result"
+              exit 1
+            fi
+          done

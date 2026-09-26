@@ -9,15 +9,15 @@
 //!
 //! This only works with optimizations and depends on the compiler's inlining
 //! decisions, so the tests only run when enabled with the `no_panic_tests`
-//! cfg, in the `no-panic` profile:
+//! cfg, in the release profile that users build with:
 //!
 //! ```sh
-//! RUSTFLAGS="--cfg no_panic_tests" cargo test --profile no-panic --test no_panic
+//! RUSTFLAGS="--cfg no_panic_tests" cargo test --release --test no_panic
 //! ```
 //!
-//! The profile is the release profile with a single codegen unit. With more,
-//! a method is sometimes not inlined into the wrapper, and `no_panic` reports
-//! any call that isn't inlined, whether or not it can panic.
+//! `no_panic` reports any call that isn't inlined into the wrapper, whether or
+//! not it can panic. The methods are `#[inline]`, so that they are inlined
+//! even though the release profile has more than one codegen unit.
 //!
 //! If linking fails, the error names the function, but not its module. The
 //! wrappers are `#[inline(never)]`, so the object file shows which ones
@@ -25,7 +25,7 @@
 //! Inspect them, e.g. with `cargo-show-asm`:
 //!
 //! ```sh
-//! RUSTFLAGS="--cfg no_panic_tests" cargo asm --profile no-panic --test no_panic \
+//! RUSTFLAGS="--cfg no_panic_tests" cargo asm --release --test no_panic \
 //!     "no_panic::sum::from_fn"
 //! ```
 #![cfg(no_panic_tests)]

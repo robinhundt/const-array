@@ -57,10 +57,3 @@ cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 [lints.rust]
 # Enables the tests in tests/no_panic.rs.
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(no_panic_tests)"] }
-
-# For the tests in tests/no_panic.rs, which check that the optimizer removes
-# the checks that can't fail. A single codegen unit makes the inlining, and
-# thus the results, reliable.
-[profile.no-panic]
-inherits = "release"
-codegen-units = 1

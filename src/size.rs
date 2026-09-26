@@ -225,11 +225,13 @@ impl<const N: usize> Debug for Len<N> {
         write!(f, "Len<{N}>")
     }
 }
+
 /// An `A` followed by a `B`.
 ///
 /// An [`Array`](crate::Array) of this size can be split into its parts with
 /// [`Array::split_ref`](crate::Array::split_ref) and friends.
 pub struct Sum<A, B>(PhantomData<(A, B)>);
+
 /// `A` chunks of `B` elements.
 ///
 /// An [`Array`](crate::Array) of this size can be viewed as an array of chunks

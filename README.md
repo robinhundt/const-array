@@ -123,8 +123,8 @@ types can flatten it with `same_len!`.
 
 **Comparisons** work the same way. An `AtMost<A, B>` proves that `A` is at
 most as long as `B`, and `AtLeast<B, A>` is an alias for it. Create it with
-`at_most!` or `at_least!`, from lemmas such as `AtMost::prefix_of_sum`,
-`AtMost::checked` or `AtMost::try_new`. It is
+`at_most!` or `at_least!`, compose it from lemmas such as
+`AtMost::prefix_of_sum`, or use `AtMost::checked` or `AtMost::try_new`. It is
 required by `truncate`, `pad_from` and the prefix and suffix methods, e.g. for
 truncated MAC tags or keys padded to a block. A trait requirement such as
 "the digest output fits into one block" can be an associated `const` proof on

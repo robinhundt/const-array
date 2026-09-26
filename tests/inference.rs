@@ -595,3 +595,19 @@ fn sizes_debug_print_their_structure() {
         "Sum<Len<1>, Prod<Len<2>, Len<3>>>"
     );
 }
+
+#[test]
+fn into_iter_clone_and_skipping() {
+    let a: Array<String, S6> = Array::from_fn(|i| i.to_string());
+    let mut iter = a.into_iter();
+    assert_eq!(iter.next().as_deref(), Some("0"));
+    let mut copy = iter.clone();
+    assert_eq!(copy.as_slice(), iter.as_slice());
+    assert_eq!(copy.nth(1).as_deref(), Some("2"));
+    assert_eq!(copy.nth_back(1).as_deref(), Some("4"));
+    assert_eq!(copy.len(), 1);
+    assert_eq!(copy.nth(5), None);
+    assert_eq!(iter.clone().count(), 5);
+    assert_eq!(iter.clone().last().as_deref(), Some("5"));
+    assert_eq!(iter.len(), 5, "the original is unaffected");
+}

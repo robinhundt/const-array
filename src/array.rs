@@ -602,7 +602,7 @@ impl<T, S: ArrayLen> Array<T, S> {
 /// # Safety
 /// `Dst` must be laid out as `Src`, and any value of `Src` must be a valid
 /// value of `Dst`. The result takes ownership of whatever `src` owns.
-const unsafe fn transmute_layout<Src, Dst>(src: Src) -> Dst {
+pub(crate) const unsafe fn transmute_layout<Src, Dst>(src: Src) -> Dst {
     // Not a `const` assertion, because callers like `Array::try_cast` may
     // instantiate this with mismatched types in branches that are never taken.
     debug_assert!(mem::size_of::<Src>() == mem::size_of::<Dst>());

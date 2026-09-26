@@ -67,6 +67,28 @@ jobs:
       - name: Run compile_fail tests
         run: cargo test --test compile_fail
 
+  no-panic:
+    name: No-panic tests
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Stable rather than a pinned version, so that a new compiler that no
+      # longer optimizes a check away is noticed.
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: stable
+
+      - run: cargo --version
+
+      - name: Run no_panic tests
+        env:
+          RUSTFLAGS: --cfg no_panic_tests
+        run: cargo test --release --test no_panic
+
   msrv:
     name: MSRV
     runs-on: "ubuntu-latest"
@@ -228,7 +250,7 @@ jobs:
   ci:
     name: CI
     if: always()
-    needs: [test, compile-fail, msrv, miri, lint, docs, mutants]
+    needs: [test, compile-fail, no-panic, msrv, miri, lint, docs, mutants]
     runs-on: "ubuntu-latest"
     steps:
       - name: Check that all jobs succeeded

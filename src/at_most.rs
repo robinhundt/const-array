@@ -53,6 +53,7 @@ pub type AtLeast<A, B> = AtMost<B, A>;
 // Manual impls, because deriving them would add unnecessary bounds on `A`
 // and `B`.
 impl<A, B> Clone for AtMost<A, B> {
+    #[inline]
     fn clone(&self) -> Self {
         *self
     }
@@ -74,6 +75,7 @@ impl<A: ArrayLen, B: ArrayLen> AtMost<A, B> {
     /// [`at_most!`](crate::at_most!) for concrete sizes, which turns a
     /// mismatch into a compile error.
     #[must_use]
+    #[inline]
     pub const fn try_new() -> Option<Self> {
         if A::USIZE <= B::USIZE {
             // Invariant: Checked above.
@@ -118,6 +120,7 @@ impl<A: ArrayLen, B: ArrayLen> AtMost<A, B> {
     /// The error points at the generic code, not at the code that chose the
     /// sizes. See [`SameLen::checked`] for how to move it to `cargo check`.
     #[must_use]
+    #[inline]
     pub const fn checked() -> Self {
         const {
             assert!(
@@ -132,6 +135,7 @@ impl<A: ArrayLen, B: ArrayLen> AtMost<A, B> {
     /// If `A` is at most as long as `B` and `B` at most as long as `C`, then
     /// `A` is at most as long as `C`.
     #[must_use]
+    #[inline]
     pub const fn trans<C: ArrayLen>(self, _other: AtMost<B, C>) -> AtMost<A, C> {
         // Invariant: `A::USIZE <= B::USIZE <= C::USIZE`.
         AtMost(PhantomData)
@@ -140,6 +144,7 @@ impl<A: ArrayLen, B: ArrayLen> AtMost<A, B> {
     /// If `A` is at most as long as `B` and `C` at most as long as `D`, then
     /// `Sum<A, C>` is at most as long as `Sum<B, D>`.
     #[must_use]
+    #[inline]
     pub const fn sum<C: ArrayLen, D: ArrayLen>(
         self,
         _other: AtMost<C, D>,
@@ -151,6 +156,7 @@ impl<A: ArrayLen, B: ArrayLen> AtMost<A, B> {
     /// If `A` is at most as long as `B` and `C` at most as long as `D`, then
     /// `Prod<A, C>` is at most as long as `Prod<B, D>`.
     #[must_use]
+    #[inline]
     pub const fn prod<C: ArrayLen, D: ArrayLen>(
         self,
         _other: AtMost<C, D>,
@@ -163,6 +169,7 @@ impl<A: ArrayLen, B: ArrayLen> AtMost<A, B> {
     /// If `A` is at most as long as `B` and `B` at most as long as `A`, then
     /// both have the same length.
     #[must_use]
+    #[inline]
     pub const fn antisymm(self, _other: AtMost<B, A>) -> SameLen<A, B> {
         // Invariant of `SameLen`: `A::USIZE <= B::USIZE <= A::USIZE`.
         SameLen(PhantomData)
@@ -172,6 +179,7 @@ impl<A: ArrayLen, B: ArrayLen> AtMost<A, B> {
 impl<A: ArrayLen> AtMost<A, A> {
     /// Every size is at most as long as itself.
     #[must_use]
+    #[inline]
     pub const fn refl() -> Self {
         // Invariant: `A::USIZE <= A::USIZE`.
         AtMost(PhantomData)
@@ -185,6 +193,7 @@ impl<A: ArrayLen, B: ArrayLen> AtMost<A, Sum<A, B>> {
     /// [`Array::split_prefix`](crate::Array::split_prefix), which also returns
     /// the rest as a slice.
     #[must_use]
+    #[inline]
     pub const fn prefix_of_sum() -> Self {
         // Invariant: `A::USIZE <= A::USIZE + B::USIZE`.
         AtMost(PhantomData)
@@ -194,6 +203,7 @@ impl<A: ArrayLen, B: ArrayLen> AtMost<A, Sum<A, B>> {
 impl<A: ArrayLen, B: ArrayLen> AtMost<B, Sum<A, B>> {
     /// Lemma: `B` is at most as long as `A + B`.
     #[must_use]
+    #[inline]
     pub const fn suffix_of_sum() -> Self {
         // Invariant: `B::USIZE <= A::USIZE + B::USIZE`.
         AtMost(PhantomData)
@@ -203,6 +213,7 @@ impl<A: ArrayLen, B: ArrayLen> AtMost<B, Sum<A, B>> {
 impl<A: ArrayLen> AtMost<Len<0>, A> {
     /// Lemma: The empty size is at most as long as every size.
     #[must_use]
+    #[inline]
     pub const fn zero() -> Self {
         // Invariant: `0 <= A::USIZE`.
         AtMost(PhantomData)
@@ -212,6 +223,7 @@ impl<A: ArrayLen> AtMost<Len<0>, A> {
 impl<A: ArrayLen, B: ArrayLen> SameLen<A, B> {
     /// If `A` has the same length as `B`, it is at most as long as `B`.
     #[must_use]
+    #[inline]
     pub const fn at_most(self) -> AtMost<A, B> {
         // Invariant: By `SameLen`'s invariant, `A::USIZE == B::USIZE`.
         AtMost(PhantomData)

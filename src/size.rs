@@ -1,11 +1,11 @@
 //! Array lengths and the array types backing them.
 
 use core::{
-    array,
     cmp::Ordering,
     fmt::{self, Debug},
     hash::{Hash, Hasher},
     marker::PhantomData,
+    mem::{self, MaybeUninit},
     ptr, slice,
 };
 
@@ -30,24 +30,65 @@ pub unsafe trait ArrayType<T>: sealed::Sealed + Sized {
     /// The length of the array.
     const LEN: usize;
 
-    /// Build a new array from the provided closure.
-    ///
-    /// The element at index `i` of the returned array is `f(offset + i)`.
-    fn build<F: FnMut(usize) -> T>(f: F, offset: usize) -> Self;
-
     #[doc(hidden)]
     /// Clone the array.
     ///
     /// This method is a work-around so that we can have a `Clone`
-    /// implementation that only has a `T: Clone` bound and which
-    /// can make use of the std library specialization of Clone
-    /// for Copy types.
+    /// implementation that only has a `T: Clone` bound. It clones the elements
+    /// flat rather than by cloning the nested arrays, which moves every clone
+    /// into place once more. For `Copy` types, this compiles to a plain copy.
+    #[inline]
     fn clone_array(&self) -> Self
     where
-        T: Clone;
+        T: Clone,
+    {
+        let flat = as_slice::<T, Self>(self);
+        build(|i| flat[i].clone())
+    }
+}
+
+/// Build an [`ArrayType`] whose element at index `i` is `f(i)`, calling `f`
+/// exactly once for each index, in order.
+///
+/// The array is built in place, like with `core::array::from_fn`. Building
+/// the nested array types by value instead copies every level, and the nested
+/// loops keep the optimizer from removing checks in `f`.
+#[inline]
+pub(crate) fn build<T, A: ArrayType<T>, F: FnMut(usize) -> T>(mut f: F) -> A {
+    /// Drops the first `init` elements at `base` if `f` panics.
+    struct Guard<T> {
+        base: *mut T,
+        init: usize,
+    }
+
+    impl<T> Drop for Guard<T> {
+        #[inline]
+        fn drop(&mut self) {
+            // SAFETY: The first `init` elements were written and are owned by
+            // the guard, as the array is never returned.
+            unsafe { ptr::drop_in_place(ptr::slice_from_raw_parts_mut(self.base, self.init)) }
+        }
+    }
+
+    let mut array = MaybeUninit::<A>::uninit();
+    let mut guard = Guard {
+        base: array.as_mut_ptr().cast::<T>(),
+        init: 0,
+    };
+    for i in 0..A::LEN {
+        let x = f(i);
+        // SAFETY: By `A`'s invariant, it is laid out as `[T; A::LEN]`, so
+        // index `i < A::LEN` is in bounds.
+        unsafe { guard.base.add(i).write(x) };
+        guard.init = i + 1;
+    }
+    mem::forget(guard);
+    // SAFETY: All `A::LEN` elements, i.e. all of `A`, are initialized.
+    unsafe { array.assume_init() }
 }
 
 /// View an [`ArrayType`] as a slice of its `A::LEN` elements.
+#[inline]
 pub(crate) const fn as_slice<T, A: ArrayType<T>>(a: &A) -> &[T] {
     // SAFETY: By `A`'s invariant, it is laid out as `[T; A::LEN]`. The slice
     // borrows from `a`.
@@ -55,6 +96,7 @@ pub(crate) const fn as_slice<T, A: ArrayType<T>>(a: &A) -> &[T] {
 }
 
 /// View an [`ArrayType`] as a mutable slice of its `A::LEN` elements.
+#[inline]
 pub(crate) const fn as_mut_slice<T, A: ArrayType<T>>(a: &mut A) -> &mut [T] {
     // SAFETY: By `A`'s invariant, it is laid out as `[T; A::LEN]`. The slice
     // mutably borrows from `a`.
@@ -65,10 +107,9 @@ pub(crate) const fn as_mut_slice<T, A: ArrayType<T>>(a: &mut A) -> &mut [T] {
 unsafe impl<T, const N: usize> ArrayType<T> for [T; N] {
     const LEN: usize = N;
 
-    fn build<F: FnMut(usize) -> T>(mut f: F, offset: usize) -> Self {
-        array::from_fn(|i| f(offset + i))
-    }
-
+    // The standard library's `Clone`, which is specialized to a plain copy for
+    // `Copy` types even without optimizations.
+    #[inline]
     fn clone_array(&self) -> Self
     where
         T: Clone,
@@ -92,17 +133,6 @@ pub struct Concat<A, B>(pub(crate) A, pub(crate) B);
 // values of `T`.
 unsafe impl<T, A: ArrayType<T>, B: ArrayType<T>> ArrayType<T> for Concat<A, B> {
     const LEN: usize = A::LEN + B::LEN;
-
-    fn build<F: FnMut(usize) -> T>(mut f: F, offset: usize) -> Self {
-        Concat(A::build(&mut f, offset), B::build(&mut f, offset + A::LEN))
-    }
-
-    fn clone_array(&self) -> Self
-    where
-        T: Clone,
-    {
-        Concat(self.0.clone_array(), self.1.clone_array())
-    }
 }
 
 /// An array `O` of arrays `I`, flattened into a single array.
@@ -115,6 +145,7 @@ pub struct Repeat<I, O>(O, PhantomData<I>);
 
 // Manual impls, because deriving them would add unnecessary bounds on `I`.
 impl<I, O: Clone> Clone for Repeat<I, O> {
+    #[inline]
     fn clone(&self) -> Self {
         Repeat(self.0.clone(), PhantomData)
     }
@@ -128,21 +159,6 @@ impl<I, O: Copy> Copy for Repeat<I, O> {}
 // those values of `T`.
 unsafe impl<T, I: ArrayType<T>, O: ArrayType<I>> ArrayType<T> for Repeat<I, O> {
     const LEN: usize = I::LEN * O::LEN;
-
-    fn build<F: FnMut(usize) -> T>(mut f: F, offset: usize) -> Self {
-        Repeat(
-            O::build(|j| I::build(&mut f, offset + j * I::LEN), 0),
-            PhantomData,
-        )
-    }
-
-    fn clone_array(&self) -> Self
-    where
-        T: Clone,
-    {
-        let outer = as_slice::<I, O>(&self.0);
-        Repeat(O::build(|j| outer[j].clone_array(), 0), PhantomData)
-    }
 }
 
 /// Trait for valid [`Array`](crate::Array) lengths.
@@ -212,6 +228,7 @@ pub struct Prod<A, B>(PhantomData<(A, B)>);
 // requires them, so that `#[derive]`s on user types that are generic over an
 // `ArrayLen` work.
 impl<A, B> Clone for Sum<A, B> {
+    #[inline]
     fn clone(&self) -> Self {
         *self
     }
@@ -227,6 +244,7 @@ impl<A: Debug + Default, B: Debug + Default> Debug for Sum<A, B> {
 }
 
 impl<A, B> PartialEq for Sum<A, B> {
+    #[inline]
     fn eq(&self, _other: &Self) -> bool {
         true
     }
@@ -235,28 +253,33 @@ impl<A, B> PartialEq for Sum<A, B> {
 impl<A, B> Eq for Sum<A, B> {}
 
 impl<A, B> Hash for Sum<A, B> {
+    #[inline]
     fn hash<H: Hasher>(&self, _state: &mut H) {}
 }
 
 impl<A, B> Default for Sum<A, B> {
+    #[inline]
     fn default() -> Self {
         Sum(PhantomData)
     }
 }
 
 impl<A, B> PartialOrd for Sum<A, B> {
+    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl<A, B> Ord for Sum<A, B> {
+    #[inline]
     fn cmp(&self, _other: &Self) -> Ordering {
         Ordering::Equal
     }
 }
 
 impl<A, B> Clone for Prod<A, B> {
+    #[inline]
     fn clone(&self) -> Self {
         *self
     }
@@ -272,6 +295,7 @@ impl<A: Debug + Default, B: Debug + Default> Debug for Prod<A, B> {
 }
 
 impl<A, B> PartialEq for Prod<A, B> {
+    #[inline]
     fn eq(&self, _other: &Self) -> bool {
         true
     }
@@ -280,22 +304,26 @@ impl<A, B> PartialEq for Prod<A, B> {
 impl<A, B> Eq for Prod<A, B> {}
 
 impl<A, B> Hash for Prod<A, B> {
+    #[inline]
     fn hash<H: Hasher>(&self, _state: &mut H) {}
 }
 
 impl<A, B> Default for Prod<A, B> {
+    #[inline]
     fn default() -> Self {
         Prod(PhantomData)
     }
 }
 
 impl<A, B> PartialOrd for Prod<A, B> {
+    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl<A, B> Ord for Prod<A, B> {
+    #[inline]
     fn cmp(&self, _other: &Self) -> Ordering {
         Ordering::Equal
     }

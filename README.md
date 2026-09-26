@@ -144,6 +144,10 @@ needs no extra bounds.
 `let b: [u8; 32] = digest.finalize().into(); Array::new(b)`. An
 `Array<T, Len<N>>` compares equal to a `[T; N]` directly.
 
+## Minimum supported Rust version
+
+The minimum supported Rust version is 1.85.
+
 ## Examples
 
 The [`examples`](https://github.com/robinhundt/const-array/tree/main/examples) directory sketches how cryptographic APIs could

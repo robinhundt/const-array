@@ -2,9 +2,21 @@
 name = "const-array"
 version = "0.1.0-alpha.5"
 edition = "2024"
+rust-version = "1.85"
 license = "MIT"
 description = "Ergonomic const generic sized arrays."
 repository = "https://github.com/robinhundt/const-array/"
+readme = "README.md"
+keywords = ["array", "const-generics", "generic-array", "no-std"]
+categories = ["data-structures", "no-std", "rust-patterns"]
+# The examples are included so that docs.rs can scrape them for the API docs.
+include = [
+    "/src",
+    "/examples",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE",
+]
 
 [dependencies]
 

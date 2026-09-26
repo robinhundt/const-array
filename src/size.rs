@@ -13,8 +13,9 @@ use crate::sealed;
 
 /// The storage of an array with elements of type `T`.
 ///
-/// This is an implementation detail of [`ArrayLen::ArrayType`]: plain arrays
-/// `[T; LEN]` for [`Len`], [`Concat`] for [`Sum`] and [`Repeat`] for [`Prod`].
+/// This is an implementation detail of [`ArrayLen::ArrayType`] and not part of
+/// the public API: plain arrays `[T; LEN]` for [`Len`], [`Concat`] for [`Sum`]
+/// and [`Repeat`] for [`Prod`].
 ///
 /// # Safety
 /// `Self` must be *laid out as* `[T; Self::LEN]`: it has the same size,
@@ -78,10 +79,11 @@ unsafe impl<T, const N: usize> ArrayType<T> for [T; N] {
 
 /// Two arrays stored one after the other.
 ///
-/// This backs [`Sum`] sizes.
+/// This backs [`Sum`] sizes. It is an implementation detail and not part of
+/// the public API.
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct Concat<A, B>(pub A, pub B);
+pub struct Concat<A, B>(pub(crate) A, pub(crate) B);
 
 // SAFETY: By their invariants, `A` and `B` are laid out as `[T; A::LEN]` and
 // `[T; B::LEN]`. Both have alignment `align_of::<T>()` and a size that is a
@@ -106,9 +108,10 @@ unsafe impl<T, A: ArrayType<T>, B: ArrayType<T>> ArrayType<T> for Concat<A, B> {
 /// An array `O` of arrays `I`, flattened into a single array.
 ///
 /// This backs [`Prod`] sizes. `I` is only a parameter so that the element
-/// type of `O` can be named.
+/// type of `O` can be named. It is an implementation detail and not part of
+/// the public API.
 #[repr(transparent)]
-pub struct Repeat<I, O>(pub O, PhantomData<I>);
+pub struct Repeat<I, O>(O, PhantomData<I>);
 
 // Manual impls, because deriving them would add unnecessary bounds on `I`.
 impl<I, O: Clone> Clone for Repeat<I, O> {
@@ -166,7 +169,7 @@ unsafe impl<T, I: ArrayType<T>, O: ArrayType<I>> ArrayType<T> for Repeat<I, O> {
 ///
 /// # Safety
 /// For every `T`, `<Self::ArrayType<T> as ArrayType<T>>::LEN == Self::USIZE`.
-/// With the [`ArrayType`] invariant, `Self::ArrayType<T>` is thus laid out as
+/// With the `ArrayType` invariant, `Self::ArrayType<T>` is thus laid out as
 /// `[T; Self::USIZE]` for every `T`.
 pub unsafe trait ArrayLen:
     sealed::Sealed + Copy + Debug + Default + Eq + Ord + Hash + Send + Sync + 'static
@@ -175,6 +178,10 @@ pub unsafe trait ArrayLen:
     const USIZE: usize;
 
     /// The array type for this length. It has `Self::USIZE` elements.
+    ///
+    /// Its concrete type is an implementation detail. It only appears in
+    /// bounds such as `S: ArrayLen<ArrayType<T>: Copy>`, see the `Copy` impl
+    /// of [`Array`](crate::Array).
     type ArrayType<T>: ArrayType<T>;
 }
 

@@ -8,7 +8,10 @@ use core::{
     ptr, slice,
 };
 
-use crate::{ArrayLen, ArrayType, AtMost, Concat, Len, Prod, SameLen, Sum, size};
+use crate::{
+    ArrayLen, AtMost, Len, Prod, SameLen, Sum,
+    size::{self, ArrayType, Concat},
+};
 
 /// An array of `S::USIZE` elements of type `T`, laid out as `[T; S::USIZE]`.
 ///

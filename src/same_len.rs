@@ -2,7 +2,7 @@
 
 use core::{fmt, marker::PhantomData};
 
-use crate::ArrayLen;
+use crate::{ArrayLen, Len, Prod, Sum};
 
 /// Proof that the [`ArrayLens`][`ArrayLen`] `A` and `B` have the same length.
 ///
@@ -18,13 +18,55 @@ use crate::ArrayLen;
 ///    instantiates, take a `SameLen` as a parameter. This makes the requirement
 ///    part of the signature, and callers with concrete types create it with
 ///    `same_len!`.
-/// 3. In generic code where the lengths are equal for every instantiation the
-///    caller can choose, [`SameLen::checked`]. A mismatch is a bug in the code
-///    that calls it, and it is only reported when the code is monomorphized.
-/// 4. [`SameLen::try_new`], to handle a mismatch at runtime.
+/// 3. In generic code where the lengths are equal because of how the sizes are
+///    built, compose a proof from the [lemmas](#lemmas), such as
+///    [`SameLen::sum_assoc`] or [`SameLen::sum`]. They can't fail, so they need
+///    no check at all.
+/// 4. In generic code where the lengths are equal for every instantiation the
+///    caller can choose, but no lemma applies, [`SameLen::checked`]. A mismatch
+///    is a bug in the code that calls it, and it is only reported when the code
+///    is monomorphized.
+/// 5. [`SameLen::try_new`], to handle a mismatch at runtime.
+///
+/// # Lemmas
+///
+/// The lemmas prove facts that hold for all sizes, e.g. that `Sum<A, B>` has
+/// the same length as `Sum<B, A>`. Combined with [`SameLen::trans`],
+/// [`SameLen::sum`] and [`SameLen::prod`], they turn a rearrangement of a
+/// size into a proof that `cargo check` accepts, in generic code too:
+///
+/// ```
+/// use const_array::{Array, ArrayLen, Len, Prod, SameLen, Sum};
+///
+/// // A header followed by `N + M` blocks, split into the header, the first
+/// // `N` blocks and the remaining `M` blocks.
+/// fn split_blocks<T, H: ArrayLen, N: ArrayLen, M: ArrayLen>(
+///     buf: &Array<T, Sum<H, Prod<Sum<N, M>, Len<16>>>>,
+/// ) -> (&Array<T, H>, &Array<T, Prod<N, Len<16>>>, &Array<T, Prod<M, Len<16>>>) {
+///     let proof = SameLen::refl().sum(SameLen::distrib_right());
+///     let (header, blocks) = buf.cast_ref(proof).split_ref();
+///     let (first, rest) = blocks.split_ref();
+///     (header, first, rest)
+/// }
+/// ```
+///
+/// Like every cast, a lemma only changes how the elements are grouped, never
+/// their order. E.g. casting `Sum<A, B>` to `Sum<B, A>` with
+/// [`SameLen::sum_comm`] does not swap the parts, but splits the same
+/// elements after the first `B::USIZE` instead of the first `A::USIZE`.
 // Invariant: A `SameLen<A, B>` only exists if `A::USIZE == B::USIZE`. Unsafe
-// code relies on this, so every constructor must ensure it.
-pub struct SameLen<A, B>(PhantomData<(A, B)>);
+// code relies on this, so every constructor must ensure it. A length that
+// overflows `usize` is a compile error wherever it is evaluated, and unsafe
+// code evaluates the lengths of both sizes before relying on the proof, so the
+// lemmas only need to hold for lengths that don't overflow.
+//
+// The proof is invariant in `A` and `B`, so it can't be coerced to a proof
+// for other sizes. All `ArrayLen`s are `'static` today, so this is purely
+// defensive.
+pub struct SameLen<A, B>(pub(crate) Invariant<A, B>);
+
+/// A marker that is invariant in `A` and `B`.
+pub(crate) type Invariant<A, B> = PhantomData<fn(A, B) -> (A, B)>;
 
 // Manual impls, because deriving them would add unnecessary bounds on `A`
 // and `B`.
@@ -64,14 +106,12 @@ impl<A: ArrayLen, B: ArrayLen> SameLen<A, B> {
     ///
     /// This is for generic code in which the lengths are equal for every
     /// instantiation the caller can choose, but in which the compiler cannot
-    /// see it, e.g. reordering the parts of a [`Sum`](crate::Sum):
+    /// see it, and no [lemma](#lemmas) applies:
     ///
     /// ```
-    /// use const_array::{Array, ArrayLen, SameLen, Sum};
+    /// use const_array::{Array, ArrayLen, Len, Prod, SameLen, Sum};
     ///
-    /// fn rotate<T, A: ArrayLen, B: ArrayLen, C: ArrayLen>(
-    ///     a: Array<T, Sum<Sum<A, B>, C>>,
-    /// ) -> Array<T, Sum<A, Sum<B, C>>> {
+    /// fn stack<T, A: ArrayLen>(a: Array<T, Sum<A, A>>) -> Array<T, Prod<Len<2>, A>> {
     ///     a.cast(SameLen::checked())
     /// }
     /// ```
@@ -143,6 +183,145 @@ impl<A: ArrayLen, B: ArrayLen> SameLen<A, B> {
     #[must_use]
     pub const fn symm(self) -> SameLen<B, A> {
         // Invariant: Equality is symmetric.
+        SameLen(PhantomData)
+    }
+
+    /// If `A` has the same length as `B` and `B` the same length as `C`, then
+    /// `A` has the same length as `C`.
+    #[must_use]
+    pub const fn trans<C: ArrayLen>(self, _other: SameLen<B, C>) -> SameLen<A, C> {
+        // Invariant: Equality is transitive.
+        SameLen(PhantomData)
+    }
+
+    /// If `A` has the same length as `B` and `C` the same length as `D`, then
+    /// `Sum<A, C>` has the same length as `Sum<B, D>`.
+    ///
+    /// Use it with [`SameLen::refl`] to rearrange one part of a [`Sum`].
+    #[must_use]
+    pub const fn sum<C: ArrayLen, D: ArrayLen>(
+        self,
+        _other: SameLen<C, D>,
+    ) -> SameLen<Sum<A, C>, Sum<B, D>> {
+        // Invariant: `A::USIZE + C::USIZE == B::USIZE + D::USIZE`.
+        SameLen(PhantomData)
+    }
+
+    /// If `A` has the same length as `B` and `C` the same length as `D`, then
+    /// `Prod<A, C>` has the same length as `Prod<B, D>`.
+    #[must_use]
+    pub const fn prod<C: ArrayLen, D: ArrayLen>(
+        self,
+        _other: SameLen<C, D>,
+    ) -> SameLen<Prod<A, C>, Prod<B, D>> {
+        // Invariant: `A::USIZE * C::USIZE == B::USIZE * D::USIZE`.
+        SameLen(PhantomData)
+    }
+}
+
+impl<A: ArrayLen, B: ArrayLen> SameLen<Sum<A, B>, Sum<B, A>> {
+    /// Lemma: `A + B` has the same length as `B + A`.
+    ///
+    /// A cast with it does not swap the parts. It splits the same elements
+    /// after the first `B::USIZE` instead of the first `A::USIZE`.
+    #[must_use]
+    pub const fn sum_comm() -> Self {
+        // Invariant: Addition is commutative.
+        SameLen(PhantomData)
+    }
+}
+
+impl<A: ArrayLen, B: ArrayLen, C: ArrayLen> SameLen<Sum<Sum<A, B>, C>, Sum<A, Sum<B, C>>> {
+    /// Lemma: `(A + B) + C` has the same length as `A + (B + C)`.
+    ///
+    /// Use [`SameLen::symm`] for the other direction.
+    #[must_use]
+    pub const fn sum_assoc() -> Self {
+        // Invariant: Addition is associative.
+        SameLen(PhantomData)
+    }
+}
+
+impl<A: ArrayLen> SameLen<Sum<Len<0>, A>, A> {
+    /// Lemma: `0 + A` has the same length as `A`.
+    #[must_use]
+    pub const fn sum_zero_left() -> Self {
+        // Invariant: 0 is the identity of addition.
+        SameLen(PhantomData)
+    }
+}
+
+impl<A: ArrayLen> SameLen<Sum<A, Len<0>>, A> {
+    /// Lemma: `A + 0` has the same length as `A`.
+    #[must_use]
+    pub const fn sum_zero_right() -> Self {
+        // Invariant: 0 is the identity of addition.
+        SameLen(PhantomData)
+    }
+}
+
+impl<A: ArrayLen, B: ArrayLen> SameLen<Prod<A, B>, Prod<B, A>> {
+    /// Lemma: `A * B` has the same length as `B * A`.
+    ///
+    /// A cast with it does not transpose. It views the same elements as `B`
+    /// chunks of `A` elements instead of `A` chunks of `B` elements.
+    #[must_use]
+    pub const fn prod_comm() -> Self {
+        // Invariant: Multiplication is commutative.
+        SameLen(PhantomData)
+    }
+}
+
+impl<A: ArrayLen, B: ArrayLen, C: ArrayLen> SameLen<Prod<Prod<A, B>, C>, Prod<A, Prod<B, C>>> {
+    /// Lemma: `(A * B) * C` has the same length as `A * (B * C)`.
+    ///
+    /// Use [`SameLen::symm`] for the other direction.
+    #[must_use]
+    pub const fn prod_assoc() -> Self {
+        // Invariant: Multiplication is associative.
+        SameLen(PhantomData)
+    }
+}
+
+impl<A: ArrayLen> SameLen<Prod<Len<1>, A>, A> {
+    /// Lemma: `1 * A` has the same length as `A`.
+    #[must_use]
+    pub const fn prod_one_left() -> Self {
+        // Invariant: 1 is the identity of multiplication.
+        SameLen(PhantomData)
+    }
+}
+
+impl<A: ArrayLen> SameLen<Prod<A, Len<1>>, A> {
+    /// Lemma: `A * 1` has the same length as `A`.
+    #[must_use]
+    pub const fn prod_one_right() -> Self {
+        // Invariant: 1 is the identity of multiplication.
+        SameLen(PhantomData)
+    }
+}
+
+impl<A: ArrayLen, B: ArrayLen, C: ArrayLen>
+    SameLen<Prod<A, Sum<B, C>>, Sum<Prod<A, B>, Prod<A, C>>>
+{
+    /// Lemma: `A * (B + C)` has the same length as `A * B + A * C`.
+    #[must_use]
+    pub const fn distrib_left() -> Self {
+        // Invariant: Multiplication distributes over addition.
+        SameLen(PhantomData)
+    }
+}
+
+impl<A: ArrayLen, B: ArrayLen, C: ArrayLen>
+    SameLen<Prod<Sum<A, B>, C>, Sum<Prod<A, C>, Prod<B, C>>>
+{
+    /// Lemma: `(A + B) * C` has the same length as `A * C + B * C`.
+    ///
+    /// `A + B` chunks of `C` elements are `A` chunks followed by `B` chunks,
+    /// e.g. to split a buffer of blocks into its first blocks and the rest.
+    #[must_use]
+    pub const fn distrib_right() -> Self {
+        // Invariant: Multiplication distributes over addition.
         SameLen(PhantomData)
     }
 }

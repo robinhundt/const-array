@@ -6,6 +6,9 @@
 //! `parts`). They are deliberately light on runtime assertions -- the point is
 //! that the code type-checks -- but they still run cleanly under miri.
 
+// Spelling out nested sizes is the point of these tests.
+#![allow(clippy::type_complexity)]
+
 use std::panic::{RefUnwindSafe, UnwindSafe};
 
 use const_array::{
@@ -439,6 +442,92 @@ fn at_least_is_at_most_swapped() {
     assert_eq!(a.prefix_ref(proof).as_slice(), &[0, 1, 2]);
     let _: AtLeast<S3, S3> = AtLeast::refl();
     assert!(AtLeast::<Len<2>, S3>::try_new().is_none());
+}
+
+#[test]
+fn same_len_lemmas_in_generic_code() {
+    // Each lemma is used where the sizes are generic, so `checked()` would be
+    // the only alternative.
+    // Re-splits the same elements, it doesn't swap them.
+    fn resplit<T, A: ArrayLen, B: ArrayLen>(a: Array<T, Sum<A, B>>) -> Array<T, Sum<B, A>> {
+        a.cast(SameLen::sum_comm())
+    }
+    fn rotate<T, A: ArrayLen, B: ArrayLen, C: ArrayLen>(
+        a: Array<T, Sum<Sum<A, B>, C>>,
+    ) -> Array<T, Sum<A, Sum<B, C>>> {
+        a.cast(SameLen::sum_assoc())
+    }
+    fn regroup_tail<T, A: ArrayLen, B: ArrayLen, C: ArrayLen>(
+        a: Array<T, Sum<Sum<A, B>, C>>,
+    ) -> Array<T, Sum<A, Sum<C, B>>> {
+        a.cast(SameLen::sum_assoc().trans(SameLen::refl().sum(SameLen::sum_comm())))
+    }
+    fn split_blocks<T, A: ArrayLen, B: ArrayLen, C: ArrayLen>(
+        a: &Array<T, Prod<Sum<A, B>, C>>,
+    ) -> (&Array<T, Prod<A, C>>, &Array<T, Prod<B, C>>) {
+        a.cast_ref(SameLen::distrib_right()).split_ref()
+    }
+    fn reshape<T, A: ArrayLen, B: ArrayLen>(a: Array<T, Prod<A, B>>) -> Array<T, Prod<B, A>> {
+        a.cast(SameLen::prod_comm())
+    }
+
+    let a: Array<u8, Sum<Len<1>, Len<2>>> = Array::from_fn(|i| i as u8);
+    let (first, second) = resplit(a).parts();
+    assert_eq!(
+        (first.as_slice(), second.as_slice()),
+        (&[0, 1][..], &[2][..])
+    );
+    let a: Array<u8, Sum<Sum<Len<1>, Len<2>>, Len<3>>> = Array::from_fn(|i| i as u8);
+    let (x, yz) = rotate(a).parts();
+    assert_eq!((x.len(), yz.len()), (1, 5));
+    let (x, zy) = regroup_tail(a).parts();
+    assert_eq!((x.len(), zy.split_ref().0.len()), (1, 3));
+    let b: Array<u8, Prod<Sum<Len<1>, Len<2>>, Len<4>>> = Array::from_fn(|i| i as u8);
+    let (first, rest) = split_blocks(&b);
+    assert_eq!((first.len(), rest.len(), rest[0]), (4, 8, 4));
+    let rows = reshape(b);
+    assert_eq!(
+        rows.as_chunks()[0].as_slice(),
+        &[0, 1, 2],
+        "reshaped, not transposed"
+    );
+
+    // The remaining lemmas only need to type-check.
+    let _: SameLen<Sum<Len<0>, S3>, S3> = SameLen::sum_zero_left();
+    let _: SameLen<Sum<S3, Len<0>>, S3> = SameLen::sum_zero_right();
+    let _: SameLen<Prod<Len<1>, S3>, S3> = SameLen::prod_one_left();
+    let _: SameLen<Prod<S3, Len<1>>, S3> = SameLen::prod_one_right();
+    let _: SameLen<Prod<Prod<S3, S3>, S3>, Prod<S3, Prod<S3, S3>>> = SameLen::prod_assoc();
+    let _: SameLen<Prod<S3, Sum<S3, S3>>, Sum<Prod<S3, S3>, Prod<S3, S3>>> =
+        SameLen::distrib_left();
+    let _: SameLen<Prod<S3, S6>, Prod<Len<3>, Len<6>>> =
+        SameLen::refl().prod(same_len!(S6, Len<6>));
+}
+
+#[test]
+fn at_most_lemmas_in_generic_code() {
+    fn head<T, A: ArrayLen, B: ArrayLen>(a: &Array<T, Sum<A, B>>) -> (&Array<T, A>, &[T]) {
+        a.split_prefix(AtMost::prefix_of_sum())
+    }
+    fn tail<T, A: ArrayLen, B: ArrayLen>(a: &Array<T, Sum<A, B>>) -> (&[T], &Array<T, B>) {
+        a.split_suffix(AtMost::suffix_of_sum())
+    }
+    fn nothing<T, A: ArrayLen>(a: &Array<T, A>) -> &Array<T, Len<0>> {
+        a.prefix_ref(AtMost::zero())
+    }
+
+    let a: Array<u8, Sum<Len<2>, Len<3>>> = Array::from_fn(|i| i as u8);
+    assert_eq!(head(&a).0, &[0, 1]);
+    assert_eq!(tail(&a).1, &[2, 3, 4]);
+    assert!(nothing(&a).is_empty());
+
+    let p: AtMost<Sum<Len<1>, Len<2>>, Sum<Len<3>, Len<4>>> =
+        at_most!(Len<1>, Len<3>).sum(at_most!(Len<2>, Len<4>));
+    let _: AtMost<Prod<Len<1>, Len<2>>, Prod<Len<3>, Len<4>>> =
+        at_most!(Len<1>, Len<3>).prod(at_most!(Len<2>, Len<4>));
+    let _ = p;
+    let same: SameLen<S6, Len<6>> = at_most!(S6, Len<6>).antisymm(at_most!(Len<6>, S6));
+    let _: Array<u8, Len<6>> = Array::<u8, S6>::default().cast(same);
 }
 
 #[test]

@@ -94,17 +94,37 @@ types can flatten it with `same_len!`.
 1. If the lengths depend on the types the *caller* chooses, take a
    `SameLen` proof as a parameter. The requirement is then part of the
    signature, and callers create the proof with `same_len!`.
-2. If the lengths are equal for every instantiation, e.g. when reordering the
-   parts of a `Sum`, use `Array::cast_checked` or `SameLen::checked`. A
-   mismatch would be a bug in the generic code itself. It is reported when
-   the code is monomorphized, so **not by `cargo check`**, only by
-   `cargo build`.
-3. To handle a mismatch at runtime, use `Array::try_cast` or
+2. If the lengths are equal because of how the sizes are built, e.g. when
+   reordering the parts of a `Sum`, compose a proof from the lemmas such as
+   `SameLen::sum_comm`, `SameLen::sum_assoc` or `SameLen::distrib_right`,
+   combined with `trans`, `sum` and `prod`. They can't fail, so they need no
+   check, and they work in generic code during `cargo check`:
+
+   ```rust
+   use const_array::{Array, ArrayLen, SameLen, Sum};
+
+   // Split a key made of `A`, `B` and `C` into the first part and the rest.
+   fn split_first<T, A: ArrayLen, B: ArrayLen, C: ArrayLen>(
+       key: Array<T, Sum<Sum<A, B>, C>>,
+   ) -> (Array<T, A>, Array<T, Sum<B, C>>) {
+       key.cast(SameLen::sum_assoc()).parts()
+   }
+   ```
+
+   Like every cast, a lemma only changes how the elements are grouped, never
+   their order: casting `Sum<A, B>` to `Sum<B, A>` splits the same elements
+   after the first `B::USIZE` instead of after the first `A::USIZE`.
+3. If the lengths are equal for every instantiation but no lemma applies,
+   use `Array::cast_checked` or `SameLen::checked`. A mismatch would be a bug
+   in the generic code itself. It is reported when the code is monomorphized,
+   so **not by `cargo check`**, only by `cargo build`.
+4. To handle a mismatch at runtime, use `Array::try_cast` or
    `SameLen::try_new`.
 
 **Comparisons** work the same way. An `AtMost<A, B>` proves that `A` is at
 most as long as `B`, and `AtLeast<B, A>` is an alias for it. Create it with
-`at_most!` or `at_least!`, `AtMost::checked` or `AtMost::try_new`. It is
+`at_most!` or `at_least!`, from lemmas such as `AtMost::prefix_of_sum`,
+`AtMost::checked` or `AtMost::try_new`. It is
 required by `truncate`, `pad_from` and the prefix and suffix methods, e.g. for
 truncated MAC tags or keys padded to a block. A trait requirement such as
 "the digest output fits into one block" can be an associated `const` proof on

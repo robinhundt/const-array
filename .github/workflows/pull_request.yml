@@ -39,6 +39,13 @@ jobs:
       - name: Run tests
         run: cargo test --verbose --no-fail-fast ${{ runner.os == 'macOS' && '-- --test-threads=1' || '' }}
 
+      - name: Run examples
+        shell: bash
+        run: |
+          for example in examples/*.rs; do
+            cargo run --example "$(basename "$example" .rs)"
+          done
+
   compile-fail:
     name: Compile-fail tests
     runs-on: "ubuntu-latest"
@@ -82,8 +89,27 @@ jobs:
         run: cargo check --lib
 
   miri:
-    name: Miri
+    name: Miri (${{ matrix.name }})
     runs-on: "ubuntu-latest"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: stacked borrows
+            target: x86_64-unknown-linux-gnu
+            flags: ""
+          - name: tree borrows
+            target: x86_64-unknown-linux-gnu
+            flags: "-Zmiri-tree-borrows -Zmiri-strict-provenance"
+          - name: 32-bit
+            target: i686-unknown-linux-gnu
+            flags: "-Zmiri-strict-provenance"
+          - name: big-endian
+            target: s390x-unknown-linux-gnu
+            flags: "-Zmiri-strict-provenance"
+    env:
+      MIRIFLAGS: ${{ matrix.flags }}
+      TARGET: ${{ matrix.target }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -98,7 +124,13 @@ jobs:
       - run: cargo --version
 
       - name: Run miri test
-        run: cargo miri test
+        run: cargo miri test --no-fail-fast --target "$TARGET"
+
+      - name: Run examples under miri
+        run: |
+          for example in examples/*.rs; do
+            cargo miri run --target "$TARGET" --example "$(basename "$example" .rs)"
+          done
 
   lint:
     name: Lint

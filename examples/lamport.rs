@@ -1,4 +1,4 @@
-//! Lamport one-time signatures (Lamport 1979), generic over any [`Digest`].
+//! Lamport one-time signatures (Lamport 1979), generic over any `Digest`.
 //!
 //! Shows:
 //! - sizes that are *products* of a digest's output size: a key holds two

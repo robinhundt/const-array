@@ -16,7 +16,10 @@
 
 use core::mem::{align_of, size_of};
 
-use const_array::{Array, ArrayLen, ArrayType, Concat, Len, Prod, Repeat, Sum};
+use const_array::{
+    __private::{ArrayType, Concat, Repeat},
+    Array, ArrayLen, Len, Prod, Sum,
+};
 
 fn check_invariants<T, S: ArrayLen>() {
     assert_eq!(

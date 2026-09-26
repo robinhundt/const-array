@@ -20,6 +20,10 @@ jobs:
     strategy:
       matrix:
         os: [ "ubuntu-latest", "windows-latest", "macos-latest" ]
+    env:
+      # The compile_fail snapshots depend on the exact rustc version, so they
+      # only run in the `compile-fail` job below.
+      CONST_ARRAY_SKIP_COMPILE_FAIL: 1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -35,9 +39,77 @@ jobs:
       - name: Run tests
         run: cargo test --verbose --no-fail-fast ${{ runner.os == 'macOS' && '-- --test-threads=1' || '' }}
 
-  miri:
-    name: Miri
+      - name: Run examples
+        shell: bash
+        run: |
+          for example in examples/*.rs; do
+            cargo run --example "$(basename "$example" .rs)"
+          done
+
+  compile-fail:
+    name: Compile-fail tests
     runs-on: "ubuntu-latest"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The expected errors in tests/compile_fail/*.stderr are rustc's exact
+      # output. Bump this version deliberately, together with the snapshots:
+      # `TRYBUILD=overwrite cargo test --test compile_fail`.
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: "1.98.1"
+
+      - run: cargo --version
+
+      - name: Run compile_fail tests
+        run: cargo test --test compile_fail
+
+  msrv:
+    name: MSRV
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Keep in sync with `rust-version` in Cargo.toml.
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: "1.85"
+
+      - run: cargo --version
+
+      # Only the library: dev-dependencies such as trybuild need a newer
+      # compiler, and users only build the library.
+      - name: Check library
+        run: cargo check --lib
+
+  miri:
+    name: Miri (${{ matrix.name }})
+    runs-on: "ubuntu-latest"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: stacked borrows
+            target: x86_64-unknown-linux-gnu
+            flags: ""
+          - name: tree borrows
+            target: x86_64-unknown-linux-gnu
+            flags: "-Zmiri-tree-borrows -Zmiri-strict-provenance"
+          - name: 32-bit
+            target: i686-unknown-linux-gnu
+            flags: "-Zmiri-strict-provenance"
+          - name: big-endian
+            target: s390x-unknown-linux-gnu
+            flags: "-Zmiri-strict-provenance"
+    env:
+      MIRIFLAGS: ${{ matrix.flags }}
+      TARGET: ${{ matrix.target }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -52,7 +124,13 @@ jobs:
       - run: cargo --version
 
       - name: Run miri test
-        run: cargo miri test
+        run: cargo miri test --no-fail-fast --target "$TARGET"
+
+      - name: Run examples under miri
+        run: |
+          for example in examples/*.rs; do
+            cargo miri run --target "$TARGET" --example "$(basename "$example" .rs)"
+          done
 
   lint:
     name: Lint
@@ -93,12 +171,35 @@ jobs:
         with:
           persist-credentials: false
 
+      # Nightly, to build the docs like docs.rs does (see
+      # `package.metadata.docs.rs` in Cargo.toml).
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
         with:
-          toolchain: stable
+          toolchain: nightly
 
       - run: cargo --version
 
       - name: Check docs
-        run: cargo doc --verbose --all-features --no-deps
+        run: cargo doc --verbose --all-features --no-deps -Zunstable-options -Zrustdoc-scrape-examples
+
+  # The single check that branch protection requires, so that adding, removing
+  # or renaming the jobs above doesn't require changing the ruleset. It runs
+  # even when a job fails, because GitHub counts a skipped required check as
+  # passed.
+  ci:
+    name: CI
+    if: always()
+    needs: [test, compile-fail, msrv, miri, lint, docs]
+    runs-on: "ubuntu-latest"
+    steps:
+      - name: Check that all jobs succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in $RESULTS; do
+            if [ "$result" != "success" ]; then
+              echo "A required job finished with result: $result"
+              exit 1
+            fi
+          done

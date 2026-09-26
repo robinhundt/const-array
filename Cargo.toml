@@ -2,11 +2,53 @@
 name = "const-array"
 version = "0.1.0-alpha.5"
 edition = "2024"
+rust-version = "1.85"
 license = "MIT"
 description = "Ergonomic const generic sized arrays."
 repository = "https://github.com/robinhundt/const-array/"
+readme = "README.md"
+keywords = ["array", "const-generics", "generic-array", "no-std"]
+categories = ["data-structures", "no-std", "rust-patterns"]
+# The examples are included so that docs.rs can scrape them for the API docs.
+include = [
+    "/src",
+    "/examples",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE",
+]
 
 [dependencies]
 
 [dev-dependencies]
 trybuild = "1.0.121"
+
+# Scrape the examples for usages in the API docs, although they have
+# dev-dependencies.
+[[example]]
+name = "aead"
+doc-scrape-examples = true
+
+[[example]]
+name = "hkdf"
+doc-scrape-examples = true
+
+[[example]]
+name = "hybrid_kem"
+doc-scrape-examples = true
+
+[[example]]
+name = "lamport"
+doc-scrape-examples = true
+
+[[example]]
+name = "signature"
+doc-scrape-examples = true
+
+[[example]]
+name = "truncated"
+doc-scrape-examples = true
+
+[package.metadata.docs.rs]
+# Show usages from the examples in the API docs.
+cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]

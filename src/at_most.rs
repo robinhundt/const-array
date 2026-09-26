@@ -2,7 +2,7 @@
 
 use core::{fmt, marker::PhantomData};
 
-use crate::{ArrayLen, SameLen};
+use crate::{ArrayLen, Len, Prod, SameLen, Sum, same_len::Invariant};
 
 /// Proof that the [`ArrayLen`] `A` is at most as long as the [`ArrayLen`] `B`.
 ///
@@ -21,13 +21,27 @@ use crate::{ArrayLen, SameLen};
 ///    instantiates, take an `AtMost` as a parameter, or store it in a struct
 ///    when it is constructed. This makes the requirement part of the signature,
 ///    and callers with concrete types create it with `at_most!`.
-/// 3. In generic code where `A` is at most as long as `B` for every
-///    instantiation the caller can choose, [`AtMost::checked`]. It is only
-///    reported when the code is monomorphized.
-/// 4. [`AtMost::try_new`], to handle a mismatch at runtime.
+/// 3. In generic code where `A` is at most as long as `B` because of how the
+///    sizes are built, compose a proof from the lemmas, such as
+///    [`AtMost::prefix_of_sum`], [`AtMost::sum`] and [`SameLen::at_most`]. They
+///    can't fail, so they need no check at all:
+///
+///    ```
+///    use const_array::{Array, ArrayLen, AtMost, Sum};
+///
+///    fn tail<T, A: ArrayLen, B: ArrayLen>(a: &Array<T, Sum<A, B>>) -> &[T] {
+///        a.split_prefix(AtMost::prefix_of_sum()).1
+///    }
+///    ```
+/// 4. In generic code where `A` is at most as long as `B` for every
+///    instantiation the caller can choose, but no lemma applies,
+///    [`AtMost::checked`]. It is only reported when the code is monomorphized.
+/// 5. [`AtMost::try_new`], to handle a mismatch at runtime.
 // Invariant: An `AtMost<A, B>` only exists if `A::USIZE <= B::USIZE`. Unsafe
-// code relies on this, so every constructor must ensure it.
-pub struct AtMost<A, B>(PhantomData<(A, B)>);
+// code relies on this, so every constructor must ensure it. As for `SameLen`,
+// the lemmas only need to hold for lengths that don't overflow `usize`, and the
+// proof is invariant in `A` and `B`.
+pub struct AtMost<A, B>(Invariant<A, B>);
 
 /// Proof that the [`ArrayLen`] `A` is at least as long as the [`ArrayLen`]
 /// `B`, i.e. an [`AtMost<B, A>`](AtMost).
@@ -59,6 +73,7 @@ impl<A: ArrayLen, B: ArrayLen> AtMost<A, B> {
     /// The check only involves constants and is optimized away. Prefer
     /// [`at_most!`](crate::at_most!) for concrete sizes, which turns a
     /// mismatch into a compile error.
+    #[must_use]
     pub const fn try_new() -> Option<Self> {
         if A::USIZE <= B::USIZE {
             // Invariant: Checked above.
@@ -73,13 +88,13 @@ impl<A: ArrayLen, B: ArrayLen> AtMost<A, B> {
     ///
     /// This is for generic code in which `A` is at most as long as `B` for
     /// every instantiation the caller can choose, but in which the compiler
-    /// cannot see it:
+    /// cannot see it, and no lemma applies:
     ///
     /// ```
-    /// use const_array::{Array, ArrayLen, AtMost, Sum};
+    /// use const_array::{Array, ArrayLen, AtMost, Len, Prod};
     ///
-    /// fn tail<T, A: ArrayLen, B: ArrayLen>(a: &Array<T, Sum<A, B>>) -> &[T] {
-    ///     a.split_prefix(AtMost::<A, _>::checked()).1
+    /// fn first_block<T, B: ArrayLen>(a: &Array<T, Prod<Len<4>, B>>) -> &Array<T, B> {
+    ///     a.prefix_ref(AtMost::checked())
     /// }
     /// ```
     ///
@@ -102,6 +117,7 @@ impl<A: ArrayLen, B: ArrayLen> AtMost<A, B> {
     ///
     /// The error points at the generic code, not at the code that chose the
     /// sizes. See [`SameLen::checked`] for how to move it to `cargo check`.
+    #[must_use]
     pub const fn checked() -> Self {
         const {
             assert!(
@@ -115,22 +131,87 @@ impl<A: ArrayLen, B: ArrayLen> AtMost<A, B> {
 
     /// If `A` is at most as long as `B` and `B` at most as long as `C`, then
     /// `A` is at most as long as `C`.
+    #[must_use]
     pub const fn trans<C: ArrayLen>(self, _other: AtMost<B, C>) -> AtMost<A, C> {
         // Invariant: `A::USIZE <= B::USIZE <= C::USIZE`.
         AtMost(PhantomData)
+    }
+
+    /// If `A` is at most as long as `B` and `C` at most as long as `D`, then
+    /// `Sum<A, C>` is at most as long as `Sum<B, D>`.
+    #[must_use]
+    pub const fn sum<C: ArrayLen, D: ArrayLen>(
+        self,
+        _other: AtMost<C, D>,
+    ) -> AtMost<Sum<A, C>, Sum<B, D>> {
+        // Invariant: `A::USIZE + C::USIZE <= B::USIZE + D::USIZE`.
+        AtMost(PhantomData)
+    }
+
+    /// If `A` is at most as long as `B` and `C` at most as long as `D`, then
+    /// `Prod<A, C>` is at most as long as `Prod<B, D>`.
+    #[must_use]
+    pub const fn prod<C: ArrayLen, D: ArrayLen>(
+        self,
+        _other: AtMost<C, D>,
+    ) -> AtMost<Prod<A, C>, Prod<B, D>> {
+        // Invariant: `A::USIZE * C::USIZE <= B::USIZE * D::USIZE`, as all
+        // lengths are non-negative.
+        AtMost(PhantomData)
+    }
+
+    /// If `A` is at most as long as `B` and `B` at most as long as `A`, then
+    /// both have the same length.
+    #[must_use]
+    pub const fn antisymm(self, _other: AtMost<B, A>) -> SameLen<A, B> {
+        // Invariant of `SameLen`: `A::USIZE <= B::USIZE <= A::USIZE`.
+        SameLen(PhantomData)
     }
 }
 
 impl<A: ArrayLen> AtMost<A, A> {
     /// Every size is at most as long as itself.
+    #[must_use]
     pub const fn refl() -> Self {
         // Invariant: `A::USIZE <= A::USIZE`.
         AtMost(PhantomData)
     }
 }
 
+impl<A: ArrayLen, B: ArrayLen> AtMost<A, Sum<A, B>> {
+    /// Lemma: `A` is at most as long as `A + B`.
+    ///
+    /// E.g. to take the first part of a [`Sum`] with
+    /// [`Array::split_prefix`](crate::Array::split_prefix), which also returns
+    /// the rest as a slice.
+    #[must_use]
+    pub const fn prefix_of_sum() -> Self {
+        // Invariant: `A::USIZE <= A::USIZE + B::USIZE`.
+        AtMost(PhantomData)
+    }
+}
+
+impl<A: ArrayLen, B: ArrayLen> AtMost<B, Sum<A, B>> {
+    /// Lemma: `B` is at most as long as `A + B`.
+    #[must_use]
+    pub const fn suffix_of_sum() -> Self {
+        // Invariant: `B::USIZE <= A::USIZE + B::USIZE`.
+        AtMost(PhantomData)
+    }
+}
+
+impl<A: ArrayLen> AtMost<Len<0>, A> {
+    /// Lemma: The empty size is at most as long as every size.
+    #[must_use]
+    pub const fn zero() -> Self {
+        // Invariant: `0 <= A::USIZE`.
+        AtMost(PhantomData)
+    }
+}
+
 impl<A: ArrayLen, B: ArrayLen> SameLen<A, B> {
     /// If `A` has the same length as `B`, it is at most as long as `B`.
+    #[must_use]
     pub const fn at_most(self) -> AtMost<A, B> {
         // Invariant: By `SameLen`'s invariant, `A::USIZE == B::USIZE`.
         AtMost(PhantomData)

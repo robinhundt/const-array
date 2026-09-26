@@ -6,6 +6,9 @@
 //! `parts`). They are deliberately light on runtime assertions -- the point is
 //! that the code type-checks -- but they still run cleanly under miri.
 
+// Spelling out nested sizes is the point of these tests.
+#![allow(clippy::type_complexity)]
+
 use std::panic::{RefUnwindSafe, UnwindSafe};
 
 use const_array::{
@@ -439,4 +442,172 @@ fn at_least_is_at_most_swapped() {
     assert_eq!(a.prefix_ref(proof).as_slice(), &[0, 1, 2]);
     let _: AtLeast<S3, S3> = AtLeast::refl();
     assert!(AtLeast::<Len<2>, S3>::try_new().is_none());
+}
+
+#[test]
+fn same_len_lemmas_in_generic_code() {
+    // Each lemma is used where the sizes are generic, so `checked()` would be
+    // the only alternative.
+    // Re-splits the same elements, it doesn't swap them.
+    fn resplit<T, A: ArrayLen, B: ArrayLen>(a: Array<T, Sum<A, B>>) -> Array<T, Sum<B, A>> {
+        a.cast(SameLen::sum_comm())
+    }
+    fn rotate<T, A: ArrayLen, B: ArrayLen, C: ArrayLen>(
+        a: Array<T, Sum<Sum<A, B>, C>>,
+    ) -> Array<T, Sum<A, Sum<B, C>>> {
+        a.cast(SameLen::sum_assoc())
+    }
+    fn regroup_tail<T, A: ArrayLen, B: ArrayLen, C: ArrayLen>(
+        a: Array<T, Sum<Sum<A, B>, C>>,
+    ) -> Array<T, Sum<A, Sum<C, B>>> {
+        a.cast(SameLen::sum_assoc().trans(SameLen::refl().sum(SameLen::sum_comm())))
+    }
+    fn split_blocks<T, A: ArrayLen, B: ArrayLen, C: ArrayLen>(
+        a: &Array<T, Prod<Sum<A, B>, C>>,
+    ) -> (&Array<T, Prod<A, C>>, &Array<T, Prod<B, C>>) {
+        a.cast_ref(SameLen::distrib_right()).split_ref()
+    }
+    fn reshape<T, A: ArrayLen, B: ArrayLen>(a: Array<T, Prod<A, B>>) -> Array<T, Prod<B, A>> {
+        a.cast(SameLen::prod_comm())
+    }
+
+    let a: Array<u8, Sum<Len<1>, Len<2>>> = Array::from_fn(|i| i as u8);
+    let (first, second) = resplit(a).parts();
+    assert_eq!(
+        (first.as_slice(), second.as_slice()),
+        (&[0, 1][..], &[2][..])
+    );
+    let a: Array<u8, Sum<Sum<Len<1>, Len<2>>, Len<3>>> = Array::from_fn(|i| i as u8);
+    let (x, yz) = rotate(a).parts();
+    assert_eq!((x.len(), yz.len()), (1, 5));
+    let (x, zy) = regroup_tail(a).parts();
+    assert_eq!((x.len(), zy.split_ref().0.len()), (1, 3));
+    let b: Array<u8, Prod<Sum<Len<1>, Len<2>>, Len<4>>> = Array::from_fn(|i| i as u8);
+    let (first, rest) = split_blocks(&b);
+    assert_eq!((first.len(), rest.len(), rest[0]), (4, 8, 4));
+    let rows = reshape(b);
+    assert_eq!(
+        rows.as_chunks()[0].as_slice(),
+        &[0, 1, 2],
+        "reshaped, not transposed"
+    );
+
+    // The remaining lemmas only need to type-check.
+    let _: SameLen<Sum<Len<0>, S3>, S3> = SameLen::sum_zero_left();
+    let _: SameLen<Sum<S3, Len<0>>, S3> = SameLen::sum_zero_right();
+    let _: SameLen<Prod<Len<1>, S3>, S3> = SameLen::prod_one_left();
+    let _: SameLen<Prod<S3, Len<1>>, S3> = SameLen::prod_one_right();
+    let _: SameLen<Prod<Prod<S3, S3>, S3>, Prod<S3, Prod<S3, S3>>> = SameLen::prod_assoc();
+    let _: SameLen<Prod<S3, Sum<S3, S3>>, Sum<Prod<S3, S3>, Prod<S3, S3>>> =
+        SameLen::distrib_left();
+    let _: SameLen<Prod<S3, S6>, Prod<Len<3>, Len<6>>> =
+        SameLen::refl().prod(same_len!(S6, Len<6>));
+}
+
+#[test]
+fn at_most_lemmas_in_generic_code() {
+    fn head<T, A: ArrayLen, B: ArrayLen>(a: &Array<T, Sum<A, B>>) -> (&Array<T, A>, &[T]) {
+        a.split_prefix(AtMost::prefix_of_sum())
+    }
+    fn tail<T, A: ArrayLen, B: ArrayLen>(a: &Array<T, Sum<A, B>>) -> (&[T], &Array<T, B>) {
+        a.split_suffix(AtMost::suffix_of_sum())
+    }
+    fn nothing<T, A: ArrayLen>(a: &Array<T, A>) -> &Array<T, Len<0>> {
+        a.prefix_ref(AtMost::zero())
+    }
+
+    let a: Array<u8, Sum<Len<2>, Len<3>>> = Array::from_fn(|i| i as u8);
+    assert_eq!(head(&a).0, &[0, 1]);
+    assert_eq!(tail(&a).1, &[2, 3, 4]);
+    assert!(nothing(&a).is_empty());
+
+    let p: AtMost<Sum<Len<1>, Len<2>>, Sum<Len<3>, Len<4>>> =
+        at_most!(Len<1>, Len<3>).sum(at_most!(Len<2>, Len<4>));
+    let _: AtMost<Prod<Len<1>, Len<2>>, Prod<Len<3>, Len<4>>> =
+        at_most!(Len<1>, Len<3>).prod(at_most!(Len<2>, Len<4>));
+    let _ = p;
+    let same: SameLen<S6, Len<6>> = at_most!(S6, Len<6>).antisymm(at_most!(Len<6>, S6));
+    let _: Array<u8, Len<6>> = Array::<u8, S6>::default().cast(same);
+}
+
+#[test]
+fn each_ref_and_each_mut() {
+    let mut a: Array<String, S6> = Array::from_fn(|i| i.to_string());
+    let lens: Array<usize, S6> = a.each_ref().map(|s| s.len());
+    assert_eq!(lens.as_slice(), &[1; 6]);
+    for s in a.each_mut() {
+        s.push('!');
+    }
+    assert_eq!(a[5], "5!");
+}
+
+#[test]
+fn zip_pairs_elements() {
+    let a: Array<u8, S6> = Array::from_fn(|i| i as u8);
+    let b: Array<char, S6> = Array::from_fn(|i| (b'a' + i as u8) as char);
+    let pairs = a.zip(b);
+    assert_eq!(pairs[2], (2, 'c'));
+}
+
+#[test]
+fn try_from_fn_and_try_from_iter() {
+    let ok: Result<Array<u8, S6>, ()> = Array::try_from_fn(|i| Ok(i as u8));
+    assert_eq!(ok.unwrap().as_slice(), &[0, 1, 2, 3, 4, 5]);
+
+    let mut calls = 0;
+    let err: Result<Array<u8, S6>, usize> = Array::try_from_fn(|i| {
+        calls += 1;
+        if i == 2 { Err(i) } else { Ok(i as u8) }
+    });
+    assert_eq!(err, Err(2));
+    assert_eq!(calls, 3, "stops at the first error");
+
+    let a: Array<u8, S6> = Array::try_from_iter(0..6).unwrap();
+    assert_eq!(a.as_slice(), &[0, 1, 2, 3, 4, 5]);
+    assert!(Array::<u8, S6>::try_from_iter(0..5).is_err());
+    let err = Array::<u8, S6>::try_from_iter(0..7).unwrap_err();
+    let _: &dyn core::error::Error = &err;
+    assert_eq!(
+        err.to_string(),
+        "iterator length does not match the array length"
+    );
+}
+
+#[test]
+fn borrow_as_slice_for_map_lookups() {
+    use std::collections::{BTreeMap, HashMap};
+
+    let key: Array<u8, S6> = Array::from_fn(|i| i as u8);
+    let mut hash = HashMap::new();
+    hash.insert(key, "hash");
+    let mut btree = BTreeMap::new();
+    btree.insert(key, "btree");
+    let lookup: &[u8] = &[0, 1, 2, 3, 4, 5];
+    assert_eq!(hash.get(lookup), Some(&"hash"));
+    assert_eq!(btree.get(lookup), Some(&"btree"));
+}
+
+#[test]
+fn sizes_debug_print_their_structure() {
+    assert_eq!(format!("{:?}", Len::<4>), "Len<4>");
+    assert_eq!(
+        format!("{:?}", Sum::<Len<1>, Prod<Len<2>, Len<3>>>::default()),
+        "Sum<Len<1>, Prod<Len<2>, Len<3>>>"
+    );
+}
+
+#[test]
+fn into_iter_clone_and_skipping() {
+    let a: Array<String, S6> = Array::from_fn(|i| i.to_string());
+    let mut iter = a.into_iter();
+    assert_eq!(iter.next().as_deref(), Some("0"));
+    let mut copy = iter.clone();
+    assert_eq!(copy.as_slice(), iter.as_slice());
+    assert_eq!(copy.nth(1).as_deref(), Some("2"));
+    assert_eq!(copy.nth_back(1).as_deref(), Some("4"));
+    assert_eq!(copy.len(), 1);
+    assert_eq!(copy.nth(5), None);
+    assert_eq!(iter.clone().count(), 5);
+    assert_eq!(iter.clone().last().as_deref(), Some("5"));
+    assert_eq!(iter.len(), 5, "the original is unaffected");
 }

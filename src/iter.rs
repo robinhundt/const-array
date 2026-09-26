@@ -1,8 +1,8 @@
 //! Iteration over [`Array`]s.
 
-use core::{fmt, iter::FusedIterator, mem::ManuallyDrop, ops::Range, ptr, slice};
+use core::{fmt, iter::FusedIterator, mem::MaybeUninit, ops::Range, ptr, slice};
 
-use crate::{Array, ArrayLen};
+use crate::{Array, ArrayLen, array::transmute_layout};
 
 impl<'a, T, S: ArrayLen> IntoIterator for &'a Array<T, S> {
     type Item = &'a T;
@@ -27,8 +27,13 @@ impl<T, S: ArrayLen> IntoIterator for Array<T, S> {
     type IntoIter = IntoIter<T, S>;
 
     fn into_iter(self) -> Self::IntoIter {
+        const { Array::<T, S>::LAYOUT_OK };
+        const { Array::<MaybeUninit<T>, S>::LAYOUT_OK };
         IntoIter {
-            data: ManuallyDrop::new(self),
+            // SAFETY: Both arrays are laid out as `[T; S::USIZE]`, as
+            // `MaybeUninit<T>` is laid out as `T`, and every `T` is a valid
+            // `MaybeUninit<T>`. The iterator takes ownership of the elements.
+            data: unsafe { transmute_layout(self) },
             alive: 0..S::USIZE,
         }
     }
@@ -36,43 +41,49 @@ impl<T, S: ArrayLen> IntoIterator for Array<T, S> {
 
 /// A by-value iterator over the elements of an [`Array`].
 pub struct IntoIter<T, S: ArrayLen> {
-    /// The array the elements are moved out of.
-    data: ManuallyDrop<Array<T, S>>,
-    /// Invariant: `alive` is a subrange of `0..S::USIZE`. The iterator owns
-    /// the elements of `data` at these indices. The others have been moved out
-    /// and must not be accessed.
+    /// The storage the elements are moved out of.
+    data: Array<MaybeUninit<T>, S>,
+    /// Invariant: `alive` is a subrange of `0..S::USIZE`. The elements of
+    /// `data` at these indices are initialized and owned by the iterator. The
+    /// others are not, and must not be read.
     alive: Range<usize>,
 }
 
 impl<T, S: ArrayLen> IntoIter<T, S> {
-    /// Pointer to the first element of `data`, which is laid out as
-    /// `[T; S::USIZE]`.
-    fn base(&self) -> *const T {
-        const { Array::<T, S>::LAYOUT_OK };
-        ptr::from_ref(&*self.data).cast()
-    }
-
-    /// Mutable pointer to the first element of `data`, which is laid out as
-    /// `[T; S::USIZE]`.
-    fn base_mut(&mut self) -> *mut T {
-        const { Array::<T, S>::LAYOUT_OK };
-        ptr::from_mut(&mut *self.data).cast()
-    }
-
     /// The elements that have not been yielded yet.
     pub fn as_slice(&self) -> &[T] {
-        // SAFETY: By the invariant, the elements at `alive` are in bounds and
-        // initialized. The slice borrows from `self`.
-        unsafe { slice::from_raw_parts(self.base().add(self.alive.start), self.alive.len()) }
+        let alive = &self.data[self.alive.clone()];
+        // SAFETY: By the invariant, the elements at `alive` are initialized,
+        // and `MaybeUninit<T>` is laid out as `T`. The slice borrows from
+        // `self`.
+        unsafe { slice::from_raw_parts(alive.as_ptr().cast::<T>(), alive.len()) }
     }
 
     /// The elements that have not been yielded yet, as a mutable slice.
     pub fn as_mut_slice(&mut self) -> &mut [T] {
-        let start = self.alive.start;
-        let len = self.alive.len();
-        // SAFETY: By the invariant, the elements at `alive` are in bounds and
-        // initialized. The slice mutably borrows from `self`.
-        unsafe { slice::from_raw_parts_mut(self.base_mut().add(start), len) }
+        let alive = &mut self.data[self.alive.clone()];
+        // SAFETY: By the invariant, the elements at `alive` are initialized,
+        // and `MaybeUninit<T>` is laid out as `T`. The slice mutably borrows
+        // from `self`.
+        unsafe { slice::from_raw_parts_mut(alive.as_mut_ptr().cast::<T>(), alive.len()) }
+    }
+
+    /// Drop the elements at `range`.
+    ///
+    /// # Safety
+    /// The elements at `range` must be initialized and no longer be in
+    /// `alive`, so the iterator owns them but will not access them again.
+    unsafe fn drop_range(&mut self, range: Range<usize>) {
+        let dead = &mut self.data[range];
+        // SAFETY: By the caller, the elements are initialized and owned by the
+        // iterator, which never accesses them again. If one of them panics on
+        // drop, the others are still dropped.
+        unsafe {
+            ptr::drop_in_place(ptr::slice_from_raw_parts_mut(
+                dead.as_mut_ptr().cast::<T>(),
+                dead.len(),
+            ))
+        }
     }
 }
 
@@ -81,14 +92,30 @@ impl<T, S: ArrayLen> Iterator for IntoIter<T, S> {
 
     fn next(&mut self) -> Option<T> {
         let i = self.alive.next()?;
-        // SAFETY: `i` was in `alive`, so the element is in bounds and
-        // initialized. `i` is no longer in `alive`, so the caller takes
-        // ownership of it.
-        Some(unsafe { ptr::read(self.base().add(i)) })
+        // SAFETY: `i` was in `alive`, so the element is initialized. `i` is no
+        // longer in `alive`, so the caller takes ownership of it.
+        Some(unsafe { self.data[i].assume_init_read() })
+    }
+
+    fn nth(&mut self, n: usize) -> Option<T> {
+        let start = self.alive.start;
+        let skipped = n.min(self.alive.len());
+        self.alive.start += skipped;
+        // SAFETY: The skipped elements were in `alive` and no longer are.
+        unsafe { self.drop_range(start..start + skipped) };
+        self.next()
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.alive.size_hint()
+    }
+
+    fn count(self) -> usize {
+        self.alive.len()
+    }
+
+    fn last(mut self) -> Option<T> {
+        self.next_back()
     }
 }
 
@@ -96,7 +123,16 @@ impl<T, S: ArrayLen> DoubleEndedIterator for IntoIter<T, S> {
     fn next_back(&mut self) -> Option<T> {
         let i = self.alive.next_back()?;
         // SAFETY: As in `next`.
-        Some(unsafe { ptr::read(self.base().add(i)) })
+        Some(unsafe { self.data[i].assume_init_read() })
+    }
+
+    fn nth_back(&mut self, n: usize) -> Option<T> {
+        let end = self.alive.end;
+        let skipped = n.min(self.alive.len());
+        self.alive.end -= skipped;
+        // SAFETY: The skipped elements were in `alive` and no longer are.
+        unsafe { self.drop_range(end - skipped..end) };
+        self.next_back()
     }
 }
 
@@ -104,12 +140,29 @@ impl<T, S: ArrayLen> ExactSizeIterator for IntoIter<T, S> {}
 
 impl<T, S: ArrayLen> FusedIterator for IntoIter<T, S> {}
 
+impl<T: Clone, S: ArrayLen> Clone for IntoIter<T, S> {
+    fn clone(&self) -> Self {
+        let start = self.alive.start;
+        // Grow `alive` as the clones are written, so that they are dropped if
+        // a later `clone` panics.
+        let mut new = IntoIter {
+            data: Array::from_fn(|_| MaybeUninit::uninit()),
+            alive: start..start,
+        };
+        for x in self.as_slice() {
+            new.data[new.alive.end].write(x.clone());
+            new.alive.end += 1;
+        }
+        new
+    }
+}
+
 impl<T, S: ArrayLen> Drop for IntoIter<T, S> {
     fn drop(&mut self) {
-        // SAFETY: The iterator owns the elements at `alive` and is not used
-        // after `drop`. `data` is `ManuallyDrop`, so they are dropped
-        // only here.
-        unsafe { ptr::drop_in_place(self.as_mut_slice()) }
+        let alive = self.alive.clone();
+        self.alive = 0..0;
+        // SAFETY: The elements were in `alive` and no longer are.
+        unsafe { self.drop_range(alive) }
     }
 }
 

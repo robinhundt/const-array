@@ -36,9 +36,11 @@ jobs:
 
       - run: cargo --version
 
+      # Docs of the main branch, built like docs.rs builds releases (see
+      # `package.metadata.docs.rs` in Cargo.toml), including usages scraped
+      # from the examples.
       - name: Create Docs
-        # rustdoc-map allows us to link to doc.rs for dependencies
-        run: cargo doc --verbose --all-features --no-deps -Zunstable-options -Zrustdoc-map
+        run: cargo doc --verbose --all-features --no-deps -Zunstable-options -Zrustdoc-scrape-examples
       - name: Fix permissions
         run: |
           chmod -c -R +rX "target/doc/" | while read line; do

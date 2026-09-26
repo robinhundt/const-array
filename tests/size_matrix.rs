@@ -212,6 +212,20 @@ fn check_panics<S: ArrayLen>() {
         drop((result, a));
         assert_eq!(live(), base, "clone, panic at {k}");
 
+        // A panic partway leaves `b` partially overwritten, but valid.
+        let (a, mut b) = (new(), new());
+        let result = with_fuse(k, || b.clone_from(&a));
+        assert_eq!(result.is_some(), k == n, "clone_from, panic at {k}");
+        assert_eq!(live(), base + 2 * n, "clone_from, panic at {k}");
+        drop((a, b));
+        assert_eq!(live(), base, "clone_from, panic at {k}");
+
+        let (a, b) = (new(), new());
+        let result = with_fuse(k, || a.zip_with(&b, |x, y| Tracked::new(x.0 + y.0)));
+        assert_eq!(result.is_some(), k == n, "zip_with, panic at {k}");
+        drop((result, a, b));
+        assert_eq!(live(), base, "zip_with, panic at {k}");
+
         let a = new();
         let result = with_fuse(k, || a.map(|t| Tracked::new(t.0)));
         assert_eq!(result.is_some(), k == n, "map, panic at {k}");
@@ -243,6 +257,17 @@ fn check_panics<S: ArrayLen>() {
         }
         drop(iter);
         assert_eq!(live(), base, "IntoIter::clone, panic at {k}");
+    }
+
+    // Panic while cloning the fill, after the whole prefix has been moved in.
+    for k in 0..=2 {
+        let (prefix, fill) = (new(), Tracked::new(0));
+        let result = with_fuse(k, || {
+            Array::<Tracked, Sum<S, Len<2>>>::pad_from(prefix, AtMost::prefix_of_sum(), fill)
+        });
+        assert_eq!(result.is_some(), k == 2, "pad_from prefix, panic at {k}");
+        drop(result);
+        assert_eq!(live(), base, "pad_from prefix, panic at {k}");
     }
 }
 

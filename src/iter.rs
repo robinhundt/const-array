@@ -74,7 +74,12 @@ impl<T, S: ArrayLen> IntoIter<T, S> {
     /// The elements at `range` must be initialized and no longer be in
     /// `alive`, so the iterator owns them but will not access them again.
     unsafe fn drop_range(&mut self, range: Range<usize>) {
-        let dead = &mut self.data[range];
+        // By the invariant, `range` is in bounds. `get_mut` rather than
+        // indexing, because the optimizer can't always remove the bounds
+        // check, and leaking the elements is better than a panic path.
+        let Some(dead) = self.data.get_mut(range) else {
+            return;
+        };
         // SAFETY: By the caller, the elements are initialized and owned by the
         // iterator, which never accesses them again. If one of them panics on
         // drop, the others are still dropped.

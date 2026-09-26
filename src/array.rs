@@ -427,7 +427,10 @@ impl<T, S: ArrayLen> Array<T, S> {
         });
         match error {
             Some(e) => Err(e),
-            None => Ok(Self::from_exact_iter(elements.into_iter().flatten())),
+            // SAFETY: `f` never returned an error, so every element is `Some`.
+            // The optimizer can't prove this, so `unwrap` would leave a panic
+            // path.
+            None => Ok(elements.map(|x| unsafe { x.unwrap_unchecked() })),
         }
     }
 

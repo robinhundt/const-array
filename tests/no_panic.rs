@@ -165,16 +165,13 @@ check_size!(prod, Prod<Len<16>, Len<4>>, Sum<Len<3>, Len<8>>);
 check_size!(prod_large, Prod<Len<3>, Prod<Len<16>, Len<64>>>, Len<1000>);
 
 /// Define `#[no_panic]` wrappers for the methods that consume an
-/// [`IntoIter`](const_array::IntoIter).
+/// [`IntoIter`](const_array::IntoIter), directly or through `map`.
 ///
-/// They are not checked for large sizes: once the loop isn't unrolled, the
-/// bounds check of `self.data[range]` in `IntoIter::drop_range`, which drops
-/// the elements not yet yielded, remains. This is the case for `pad_from` with
-/// `Len<1024>`, and for all three with `Prod<Len<3>, Prod<Len<16>, Len<64>>>`.
-///
-/// `try_from_fn` and `try_from_iter` are not checked at all, because the
-/// `unreachable!` in `from_exact_iter`, which they call with a flattened
-/// iterator of `Option`s, is never optimized away.
+/// They build the result with `from_fn` from the iterator, and rely on the
+/// optimizer to prove that it never runs out. This fails for a [`Prod`] whose
+/// inner arrays are too long to unroll the loop over them, if the outer array
+/// is long, too. For example, `Prod<Len<16>, Len<64>>` fails, while
+/// `Prod<Len<3>, Len<1024>>` and `Len<3072>` pass. Such sizes are not checked.
 macro_rules! check_into_iter {
     ($name:ident, $s:ty, $p:ty) => {
         mod $name {
@@ -202,9 +199,23 @@ macro_rules! check_into_iter {
                 Array::pad_from(prefix, PROOF, 0)
             }
 
+            #[no_panic]
+            #[inline(never)]
+            pub fn try_from_fn() -> Result<Array<u32, S>, ()> {
+                Array::try_from_fn(|i| if i < 1 << 20 { Ok(i as u32) } else { Err(()) })
+            }
+
+            #[no_panic]
+            #[inline(never)]
+            pub fn try_from_iter(v: &[u32]) -> Option<Array<u32, S>> {
+                Array::try_from_iter(v.iter().copied()).ok()
+            }
+
             #[test]
             fn no_panic() {
                 let a = black_box(Array::<u32, S>::from_fn(|i| i as u32));
+                black_box(try_from_fn().unwrap());
+                black_box(try_from_iter(&a).unwrap());
                 black_box(map(a.clone()));
                 black_box(zip(a, Array::from_fn(|i| i as u8)));
                 black_box(pad_from(Array::from_fn(|i| i as u32)));
@@ -217,6 +228,7 @@ check_into_iter!(into_iter_len_4, Len<4>, Len<3>);
 check_into_iter!(into_iter_len_32, Len<32>, Len<16>);
 check_into_iter!(into_iter_sum, Sum<Len<5>, Sum<Len<3>, Len<25>>>, Len<7>);
 check_into_iter!(into_iter_prod, Prod<Len<16>, Len<4>>, Sum<Len<3>, Len<8>>);
+check_into_iter!(into_iter_len_1024, Len<1024>, Len<1000>);
 
 /// Define `#[no_panic]` wrappers for the methods of an array of size
 /// `Sum<A, B>` and `Prod<A, B>`.

@@ -406,6 +406,12 @@ fn try_from_slice_error_is_an_error() {
     assert_eq!(err.to_string(), "could not convert slice to array");
     let boxed: Box<dyn std::error::Error> = Box::new(err);
     assert_eq!(boxed.to_string(), "could not convert slice to array");
+    // Both error types can be compared, e.g. in `assert_eq!`.
+    assert_eq!(err, <&Array<u8, S3>>::try_from(&[][..]).unwrap_err());
+    assert_eq!(
+        Array::<u8, S3>::try_from_iter(0..2).unwrap_err(),
+        Array::<u8, S3>::try_from_iter(0..4).unwrap_err(),
+    );
 }
 
 /// The proof macros accept concrete sizes inside generic code, and `Self` in

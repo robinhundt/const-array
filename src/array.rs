@@ -872,7 +872,7 @@ impl<T, const N: usize> Array<T, Len<N>> {
 }
 
 /// Error when converting a slice into an [`Array`].
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct TryFromSliceError(());
 
 /// Error when an iterator passed to [`Array::try_from_iter`] yields fewer or

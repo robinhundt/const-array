@@ -208,6 +208,9 @@ jobs:
   coverage:
     name: Coverage
     runs-on: "ubuntu-latest"
+    permissions:
+      # To post the summary as a comment on the pull request.
+      pull-requests: write
     env:
       # The compile_fail tests only run rustc on the files in tests/compile_fail,
       # so they cover nothing.
@@ -248,7 +251,27 @@ jobs:
             echo '```'
             cargo llvm-cov report --doctests --ignore-filename-regex "$IGNORE_FILENAME_REGEX" --summary-only
             echo '```'
-          } | tee -a "$GITHUB_STEP_SUMMARY"
+          } > target/llvm-cov/summary.md
+          cat target/llvm-cov/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      # Pull requests from forks only get a read-only token, so they only have
+      # the job summary and the artifact.
+      - name: Comment on the pull request
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            echo '### Coverage'
+            echo
+            cat target/llvm-cov/summary.md
+            echo
+            echo "The HTML report is in the \`coverage\` artifact of [this run]($RUN_URL)."
+          } > target/llvm-cov/comment.md
+          # Updates the previous coverage comment instead of adding one per push.
+          gh pr comment "$PR" --edit-last --create-if-none --body-file target/llvm-cov/comment.md
 
       - name: Upload report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

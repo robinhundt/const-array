@@ -21,6 +21,7 @@ include = [
 [dependencies]
 
 [dev-dependencies]
+no-panic = "0.1.37"
 trybuild = "1.0.121"
 
 # Scrape the examples for usages in the API docs, although they have
@@ -52,3 +53,10 @@ doc-scrape-examples = true
 [package.metadata.docs.rs]
 # Show usages from the examples in the API docs.
 cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
+
+# For the tests in tests/no_panic.rs, which check that the optimizer removes
+# the checks that can't fail. A single codegen unit makes the inlining, and
+# thus the results, reliable.
+[profile.no-panic]
+inherits = "release"
+codegen-units = 1
